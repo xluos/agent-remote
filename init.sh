@@ -453,19 +453,22 @@ configure_shell() {
         ln -sf "$SCRIPT_DIR/bin/cx"            "$BIN_DIR/cx"           2>/dev/null || true
         ln -sf "$SCRIPT_DIR/bin/cdx"           "$BIN_DIR/cdx"          2>/dev/null || true
         ln -sf "$SCRIPT_DIR/bin/agent-remote" "$BIN_DIR/agent-remote" 2>/dev/null || true
+        ln -sf "$SCRIPT_DIR/bin/agent-remote" "$BIN_DIR/agt"          2>/dev/null || true
     else
         ln -sf "$SCRIPT_DIR/bin/cl"            "$BIN_DIR/cl"           2>/dev/null || true
         ln -sf "$SCRIPT_DIR/bin/cx"            "$BIN_DIR/cx"           2>/dev/null || true
         ln -sf "$SCRIPT_DIR/bin/cdx"           "$BIN_DIR/cdx"          2>/dev/null || true
         ln -sf "$SCRIPT_DIR/bin/agent-remote" "$BIN_DIR/agent-remote" 2>/dev/null || true
+        ln -sf "$SCRIPT_DIR/bin/agent-remote" "$BIN_DIR/agt"          2>/dev/null || true
     fi
 
-    print_success "已安装 cla、cl、cx、cdx 和 agent-remote 到 $BIN_DIR"
+    print_success "已安装 cla、cl、cx、cdx 和 agent-remote (agt) 到 $BIN_DIR"
     print_info "  cla           - 启动飞书客户端 + 以当前目录路径+时间戳为会话名启动 Claude"
     print_info "  cl            - 同 cla，但跳过权限确认"
     print_info "  cx            - 启动飞书客户端 + 以当前目录路径+时间戳为会话名启动 Codex（跳过权限）"
     print_info "  cdx           - 同 cx，但需确认权限"
     print_info "  agent-remote - Agent Remote 主命令（start/attach/list/kill/lark）"
+    print_info "  agt          - agent-remote 的短别名（同一程序）"
 
     # 安装 shell 自动补全
     local COMPLETION_LINE="source \"$SCRIPT_DIR/scripts/completion.sh\""

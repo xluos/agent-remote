@@ -4,8 +4,11 @@
   "description": "双端共享 Claude CLI 工具",
   "bin": {
     "agent-remote": "bin/agent-remote",
+    "agt": "bin/agent-remote",
     "cla": "bin/cla",
-    "cl": "bin/cl"
+    "cl": "bin/cl",
+    "cx": "bin/cx",
+    "cdx": "bin/cdx"
   },
   "scripts": {
     "preinstall": "bash scripts/preinstall.sh",
