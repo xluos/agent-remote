@@ -1,5 +1,10 @@
 # Agent Remote
 
+> **Heads-up**: `agent-remote` is the rebranded successor of [`yyzybb537/remote_claude`](https://github.com/yyzybb537/remote_claude) — same product, new name. The user-facing commands `cla` / `cl` / `cx` are unchanged. Companion projects are [`agent-remote-core`](https://github.com/xluos/agent-remote-core) (the reusable PTY-host runtime) and [`@agent-remote/sdk`](https://github.com/xluos/agent-remote-sdk) (TypeScript SDK).
+>
+> New since the rebrand: namespace isolation (`--data-dir`), smart attach on duplicate start, automatic claude session-id persistence (machine reboot resumes the same conversation), and a `serve --foreground` mode for embedded scenarios like claude-squad.
+
+
 **在电脑终端上打开的 Claude Code 进程，也可以在飞书中共享操作。电脑端、手机端无缝来回切换**
 
 电脑上用终端跑 Claude Code 写代码，同时在手机飞书上看进度、发指令、点按钮 — 不用守在电脑前，随时随地掌控 AI 编程。

@@ -371,8 +371,8 @@ def cmd_lark_start(args):
             print(f"✓ 飞书客户端已启动")
             print(f"  PID: {pid}")
             print(f"  日志: {log_file}")
-            print(f"\n使用 'python3 agent_remote.py lark status' 查看状态")
-            print(f"使用 'python3 agent_remote.py lark stop' 停止")
+            print(f"\n使用 'agent-remote lark status' 查看状态")
+            print(f"使用 'agent-remote lark stop' 停止")
             _start_watchdog()
             return 0
         else:
@@ -469,7 +469,7 @@ def cmd_lark_status(args):
     """显示飞书客户端状态"""
     if not is_lark_running():
         print("飞书客户端未运行")
-        print("\n使用 'python3 agent_remote.py lark start' 启动")
+        print("\n使用 'agent-remote lark start' 启动")
         return 0
 
     status = get_lark_status()
@@ -772,11 +772,11 @@ def cmd_lark(args):
     else:
         print("飞书客户端未运行")
         print("\n可用命令:")
-        print("  python3 agent_remote.py lark init     - 配置向导（首次使用）")
-        print("  python3 agent_remote.py lark start    - 启动客户端")
-        print("  python3 agent_remote.py lark stop     - 停止客户端")
-        print("  python3 agent_remote.py lark restart  - 重启客户端")
-        print("  python3 agent_remote.py lark status   - 查看状态")
+        print("  agent-remote lark init     - 配置向导（首次使用）")
+        print("  agent-remote lark start    - 启动客户端")
+        print("  agent-remote lark stop     - 停止客户端")
+        print("  agent-remote lark restart  - 重启客户端")
+        print("  agent-remote lark status   - 查看状态")
         return 0
 
 
