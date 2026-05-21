@@ -1,0 +1,53 @@
+{
+  "name": "agent-remote",
+  "version": "1.0.9",
+  "description": "双端共享 Claude CLI 工具",
+  "bin": {
+    "agent-remote": "bin/agent-remote",
+    "cla": "bin/cla",
+    "cl": "bin/cl"
+  },
+  "scripts": {
+    "preinstall": "bash scripts/preinstall.sh",
+    "postinstall": "bash scripts/postinstall.sh"
+  },
+  "files": [
+    "bin/",
+    "scripts/*.sh",
+    "scripts/*.py",
+    "init.sh",
+    "agent_remote.py",
+    "server/*.py",
+    "server/parsers/*.py",
+    "client/*.py",
+    "utils/*.py",
+    "lark_client/__init__.py",
+    "lark_client/*.py",
+    "stats/__init__.py",
+    "stats/*.py",
+    "pyproject.toml",
+    ".env.example"
+  ],
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yyzybb537/agent_remote.git"
+  },
+  "keywords": [
+    "claude",
+    "cli",
+    "terminal",
+    "pty",
+    "lark"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  }
+}
