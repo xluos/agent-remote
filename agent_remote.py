@@ -86,16 +86,30 @@ def cmd_start(args):
     # S2 持久化：会话身份层负责续接 / 新建 claude 对话上下文
     # 第一次起 → --session-id <uuid>，让 claude 用我们分配的 UUID 起新会话
     # 后续起 → --resume <uuid>，跟之前对话续上
+    #
+    # 显式传 > 自动注入：如果用户在 claude_args 里已经传了 --session-id /
+    # --resume，agent-remote 不再注入，避免参数冲突
+    _SESSION_ID_FLAGS = {"--session-id", "--resume"}
+    user_provided_session_flag = any(
+        arg in _SESSION_ID_FLAGS or any(arg.startswith(f + "=") for f in _SESSION_ID_FLAGS)
+        for arg in claude_args
+    )
+
     cli_type_for_id = getattr(args, "cli", "claude")
-    try:
-        from utils.session_id_map import claude_resume_args
-        resume_args = claude_resume_args(session_name, cli_type_for_id)
-        if resume_args:
-            # 注入到 claude_args 最前面，避免被用户后续位置参数遮蔽
-            claude_args = resume_args + list(claude_args)
-    except Exception as _e:
-        # 映射文件损坏/不可读，降级到不 resume（用户体验仅退化一次）
-        logging.getLogger('Start').warning(f"session_id_map 失败，继续起新会话: {_e}")
+    if user_provided_session_flag:
+        logging.getLogger('Start').info(
+            "检测到用户显式传 --session-id / --resume，跳过自动 session_id 注入"
+        )
+    else:
+        try:
+            from utils.session_id_map import claude_resume_args
+            resume_args = claude_resume_args(session_name, cli_type_for_id)
+            if resume_args:
+                # 注入到 claude_args 最前面（用户没传，自动接管）
+                claude_args = resume_args + list(claude_args)
+        except Exception as _e:
+            # 映射文件损坏/不可读，降级到不 resume（用户体验仅退化一次）
+            logging.getLogger('Start').warning(f"session_id_map 失败，继续起新会话: {_e}")
 
     claude_args_str = " ".join(f"'{arg}'" for arg in claude_args)
     debug_flag = " --debug-screen" if getattr(args, "debug_screen", False) else ""

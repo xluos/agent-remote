@@ -1,4 +1,14 @@
 #!/bin/bash
+# cla — agent-remote 的"启动 Claude（默认权限确认）"快捷命令
+#
+# 用法:
+#   cla                          → 新会话，名字 = PWD_时间戳
+#   cla mywork                   → 新/续 会话，名字 = mywork
+#   cla -n mywork --model X      → 显式指定 session name + 透传 --model X
+#   cla --model X                → 名字 = PWD_时间戳，透传 --model X
+#   cla -- --model X             → 显式分隔；-- 后全部透传给 claude
+#   cla mywork -- --resume xxx   → 同上，且 mywork 当 session name
+
 # 解析符号链接，兼容 macOS（不支持 readlink -f）
 SOURCE="$0"
 while [ -L "$SOURCE" ]; do
@@ -13,13 +23,31 @@ if ! command -v uv &>/dev/null; then
     [ -f "$HOME/.local/bin/uv" ] && export PATH="$HOME/.local/bin:$PATH"
 fi
 
-# 会话名：第一个参数非 - 开头时作为自定义名，否则用 PWD_时间戳
-if [ -n "$1" ] && [[ "$1" != -* ]]; then
-    SESSION_NAME="$1"
-    shift
-else
-    SESSION_NAME="${PWD}_$(date +%m%d_%H%M%S)"
+# ── 参数解析 ────────────────────────────────────────────────────────────
+# Pass 1: 抽取 -n / --name（任意位置）
+NAME=""
+ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -n|--name)
+            NAME="$2"; shift 2 ;;
+        *)
+            ARGS+=("$1"); shift ;;
+    esac
+done
+set -- "${ARGS[@]}"
+
+# Pass 2: 没传 -n 时，第一个非 - 参数当 session name（兼容旧用法）
+if [[ -z "$NAME" && $# -gt 0 && "$1" != -* ]]; then
+    NAME="$1"; shift
 fi
 
+# 跳过显式的 -- 分隔符（如果出现在 session name 后面）
+[[ "$1" == "--" ]] && shift
+
+# 默认 session name
+[[ -z "$NAME" ]] && NAME="${PWD}_$(date +%m%d_%H%M%S)"
+
+# ── 启动 ────────────────────────────────────────────────────────────────
 uv run --project "$SCRIPT_DIR" python3 "$SCRIPT_DIR/agent_remote.py" lark start
-uv run --project "$SCRIPT_DIR" python3 "$SCRIPT_DIR/agent_remote.py" start "$SESSION_NAME" -- "$@"
+uv run --project "$SCRIPT_DIR" python3 "$SCRIPT_DIR/agent_remote.py" start "$NAME" -- "$@"
