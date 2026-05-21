@@ -5,7 +5,9 @@
 - Socket 连接
 - 输入转发
 - 输出显示
-- Ctrl+D 退出
+- Ctrl+D 或 Ctrl+Q 退出（detach）
+  · 都只断开当前 client 的视图，server / claude / 飞书桥都继续活
+  · Ctrl+Q 在某些 CLI 场景下更安全（Ctrl+D 在 shell 里语义是 EOF，容易误按）
 """
 
 import asyncio
@@ -31,8 +33,10 @@ except Exception:
     def _track_stats(*args, **kwargs): pass
 
 
-# 特殊按键
-CTRL_D = b'\x04'  # Ctrl+D - 退出
+# 特殊按键 — 任何一个都会 detach client（server 不动）
+CTRL_D = b'\x04'  # Ctrl+D，传统快捷键
+CTRL_Q = b'\x11'  # Ctrl+Q，避免 Ctrl+D 跟 EOF 混淆时使用
+DETACH_KEYS = {CTRL_D, CTRL_Q}
 
 
 class RemoteClient:
@@ -231,8 +235,8 @@ class RemoteClient:
 
     async def _handle_input(self, data: bytes):
         """处理输入"""
-        # Ctrl+D 退出
-        if data == CTRL_D:
+        # Ctrl+D 或 Ctrl+Q → detach（client 退出，server 继续活）
+        if data in DETACH_KEYS:
             self.running = False
             return
 
