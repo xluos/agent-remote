@@ -1,8 +1,12 @@
 # Agent Remote
 
-> **Heads-up**: `agent-remote` is the rebranded successor of [`yyzybb537/remote_claude`](https://github.com/yyzybb537/remote_claude) — same product, new name. The user-facing commands `cla` / `cl` / `cx` are unchanged. Companion projects are [`agent-remote-core`](https://github.com/xluos/agent-remote-core) (the reusable PTY-host runtime) and [`@agent-remote/sdk`](https://github.com/xluos/agent-remote-sdk) (TypeScript SDK).
+> **Forked from [`yyzybb537/remote_claude`](https://github.com/yyzybb537/remote_claude)** — full credit to the original author. This repository is a downstream rebrand that carries forward the same product with a broader scope (Claude Code, Codex, and future agent CLIs), a cleaner name, and a few additions. The user-facing commands `cla` / `cl` / `cx` are unchanged so existing users see no behavior change.
 >
-> New since the rebrand: namespace isolation (`--data-dir`), smart attach on duplicate start, automatic claude session-id persistence (machine reboot resumes the same conversation), and a `serve --foreground` mode for embedded scenarios like claude-squad.
+> **Companion projects** in the same scope:
+> - [`agent-remote-core`](https://github.com/xluos/agent-remote-core) — the reusable PTY-host runtime, extracted from this repo so other apps (e.g. agentara) can embed it without inheriting the Feishu bridge
+> - [`@agent-remote/sdk`](https://github.com/xluos/agent-remote-sdk) — TypeScript SDK for consuming the runtime
+>
+> **What's new since the fork**: namespace isolation (`--data-dir`), smart attach on duplicate start, automatic Claude session-id persistence (so a machine reboot resumes the same conversation), and a `serve --foreground` mode for embedded scenarios like claude-squad.
 
 
 **在电脑终端上打开的 Claude Code 进程，也可以在飞书中共享操作。电脑端、手机端无缝来回切换**
@@ -156,3 +160,19 @@ CLAUDE_COMMAND=/usr/local/bin/claude
 - [CLAUDE.md](./CLAUDE.md) — 项目架构和开发说明
 - [LARK_CLIENT_GUIDE.md](./LARK_CLIENT_GUIDE.md) — 飞书客户端完整指南
 - [docker/README.md](./docker/README.md) — Docker 测试（npm 包发布前验证）
+
+## Credits
+
+This project is forked from [**yyzybb537/remote_claude**](https://github.com/yyzybb537/remote_claude) — the original author created the PTY proxy + Feishu bridge architecture this repo builds on. All design credit for the underlying mechanism belongs there. Please consider starring the upstream project.
+
+The fork exists to:
+
+1. Carry the project under a name that reflects its broader scope (Claude / Codex / future agent CLIs, not just Claude Code)
+2. Cleanly split out the reusable runtime into [`agent-remote-core`](https://github.com/xluos/agent-remote-core) so other apps (agentara, third-party TUIs) can embed it without inheriting the Feishu bridge
+3. Maintain a TypeScript SDK at [`@agent-remote/sdk`](https://github.com/xluos/agent-remote-sdk) for cross-language consumers
+
+If you want the original (with possibly different release cadence and feature set), use the upstream repo. The two are protocol-compatible at the `.mq` / Unix socket layer.
+
+## License
+
+MIT — inherited from the upstream `remote_claude` project, same terms.
