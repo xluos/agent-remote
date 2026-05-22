@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from lark_client.session_bridge import SessionBridge
 
 SESSION_NAME = "ff"
-DEBUG_FILE = f"/tmp/agent-remote/{SESSION_NAME}_messages.log"
+DEBUG_FILE = f"/tmp/agents-remote/{SESSION_NAME}_messages.log"
 TIMEOUT = 60
 
 results = {

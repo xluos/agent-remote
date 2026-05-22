@@ -347,8 +347,8 @@ install_dependencies() {
 configure_lark() {
     print_header "配置飞书客户端"
 
-    ENV_FILE="$HOME/.agent-remote/.env"
-    mkdir -p "$HOME/.agent-remote"
+    ENV_FILE="$HOME/.agents-remote/.env"
+    mkdir -p "$HOME/.agents-remote"
 
     # 迁移旧 .env（项目根目录）到新位置
     if [ -f ".env" ] && [ ! -f "$ENV_FILE" ]; then
@@ -386,8 +386,8 @@ configure_lark() {
 create_directories() {
     print_header "创建运行目录"
 
-    SOCKET_DIR="/tmp/agent-remote"
-    USER_DATA_DIR="$HOME/.agent-remote"
+    SOCKET_DIR="/tmp/agents-remote"
+    USER_DATA_DIR="$HOME/.agents-remote"
 
     if [ ! -d "$SOCKET_DIR" ]; then
         mkdir -p "$SOCKET_DIR"
@@ -495,7 +495,7 @@ configure_shell() {
 restart_lark_client() {
     print_header "重启飞书客户端"
 
-    LARK_PID_FILE="/tmp/agent-remote/lark.pid"
+    LARK_PID_FILE="/tmp/agents-remote/lark.pid"
 
     if [ ! -f "$LARK_PID_FILE" ] && ! pgrep -f "lark_client/main.py" &>/dev/null; then
         print_info "飞书客户端未运行，跳过重启"

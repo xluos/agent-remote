@@ -3,8 +3,8 @@
 # 用法: source scripts/check-env.sh "$INSTALL_DIR"
 
 INSTALL_DIR="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-ENV_FILE="$HOME/.agent-remote/.env"
-mkdir -p "$HOME/.agent-remote"
+ENV_FILE="$HOME/.agents-remote/.env"
+mkdir -p "$HOME/.agents-remote"
 ENV_OK=false
 
 if [ -f "$ENV_FILE" ]; then

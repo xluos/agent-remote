@@ -61,7 +61,7 @@ class LarkHandler:
     """飞书消息处理器（群聊/私聊统一逻辑）"""
 
     _CHAT_BINDINGS_FILE = get_chat_bindings_file()
-    _OLD_CHAT_BINDINGS_FILE = Path("/tmp/agent-remote/lark_chat_bindings.json")
+    _OLD_CHAT_BINDINGS_FILE = Path("/tmp/agents-remote/lark_chat_bindings.json")
     _LARK_GROUP_IDS_FILE = Path(get_chat_bindings_file()).parent / "lark_group_ids.json"
 
     def __init__(self):

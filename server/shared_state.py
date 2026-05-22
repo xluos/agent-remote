@@ -13,7 +13,7 @@ SharedStateReader 随时读取最新快照。
   [Header      64B] @0       magic(4B) + version(4B) + snapshot_len(4B) + sequence(4B) + 保留
   [Snapshot  ~200MB] @64     JSON 序列化的 ClaudeWindow 快照
 
-文件路径：/tmp/agent-remote/<name>.mq
+文件路径：/tmp/agents-remote/<name>.mq
 """
 
 import json

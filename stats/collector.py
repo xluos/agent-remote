@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 from .machine import get_machine_id, get_machine_info
 
 # SQLite 数据库路径（持久化，不受 /tmp 清理影响）
-_DB_DIR = Path.home() / ".agent-remote"
+_DB_DIR = Path.home() / ".agents-remote"
 _DB_PATH = _DB_DIR / "stats.db"
 _OLD_DB_DIR = Path.home() / ".local" / "share" / "agent-remote"
 _OLD_DB_PATH = _OLD_DB_DIR / "stats.db"

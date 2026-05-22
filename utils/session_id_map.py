@@ -1,6 +1,6 @@
 """Session-name ↔ Claude session UUID 映射的持久化
 
-存储在 ~/.agent-remote/sessions.json，结构：
+存储在 ~/.agents-remote/sessions.json，结构：
 
   {
     "<session_name>": {

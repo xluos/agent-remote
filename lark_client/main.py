@@ -353,7 +353,7 @@ class LarkBot:
         # 检查配置
         if not config.FEISHU_APP_ID or not config.FEISHU_APP_SECRET:
             print("错误: 请配置 FEISHU_APP_ID 和 FEISHU_APP_SECRET")
-            print("在 ~/.agent-remote/.env 文件中添加:")
+            print("在 ~/.agents-remote/.env 文件中添加:")
             print("  FEISHU_APP_ID=your_app_id")
             print("  FEISHU_APP_SECRET=your_app_secret")
             return

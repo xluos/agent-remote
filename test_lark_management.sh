@@ -71,13 +71,13 @@ echo ""
 
 # 13. 检查残留文件（应该已清理）
 echo "13. 检查残留文件..."
-if [ -f /tmp/agent-remote/lark.pid ]; then
+if [ -f /tmp/agents-remote/lark.pid ]; then
     echo "  ✗ lark.pid 未清理"
 else
     echo "  ✓ lark.pid 已清理"
 fi
 
-if [ -f /tmp/agent-remote/lark.status ]; then
+if [ -f /tmp/agents-remote/lark.status ]; then
     echo "  ✗ lark.status 未清理"
 else
     echo "  ✓ lark.status 已清理"

@@ -997,7 +997,7 @@ def main():
     start_parser.add_argument(
         "--debug-screen",
         action="store_true",
-        help="开启 pyte 屏幕快照调试日志（每次 flush 写入 /tmp/agent-remote/<name>_screen.log）"
+        help="开启 pyte 屏幕快照调试日志（每次 flush 写入 /tmp/agents-remote/<name>_screen.log）"
     )
     start_parser.add_argument(
         "--debug-verbose",

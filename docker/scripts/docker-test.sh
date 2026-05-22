@@ -254,8 +254,8 @@ test_env_and_startup() {
     print_header "步骤 5：env 配置与启动超时测试"
 
     local install_dir="$1"
-    local env_file="$HOME/.agent-remote/.env"
-    mkdir -p "$HOME/.agent-remote"
+    local env_file="$HOME/.agents-remote/.env"
+    mkdir -p "$HOME/.agents-remote"
 
     # 5-1：写入 mock 凭证（格式合法但不能真正连接飞书）
     cat > "$env_file" << 'EOF'
@@ -309,7 +309,7 @@ EOF
     local session="docker-test-session"
     # socket 路径使用 MD5 哈希（避免 AF_UNIX path too long），tmux 会话名用原始名
     local session_hash=$(echo -n "$session" | md5sum | cut -d' ' -f1)
-    local socket_path="/tmp/agent-remote/${session_hash}.sock"
+    local socket_path="/tmp/agents-remote/${session_hash}.sock"
     local tmux_name="rc-${session}"
     # 清理可能残留的同名会话
     uv run python3 agent_remote.py kill "$session" > /dev/null 2>&1 || true
@@ -327,7 +327,7 @@ EOF
         log_info "=== start_session.log ==="
         cat "$RESULTS_DIR/start_session.log"
         # 打印 server 日志辅助诊断
-        local server_log="$HOME/.agent-remote/startup.log"
+        local server_log="$HOME/.agents-remote/startup.log"
         if [ -f "$server_log" ]; then
             log_info "=== startup.log（最后 20 行）==="
             tail -20 "$server_log"
@@ -399,7 +399,7 @@ EOF
 
     local codex_session="docker-codex-session"
     local codex_hash=$(echo -n "$codex_session" | md5sum | cut -d' ' -f1)
-    local codex_socket="/tmp/agent-remote/${codex_hash}.sock"
+    local codex_socket="/tmp/agents-remote/${codex_hash}.sock"
     local codex_tmux="rc-${codex_session}"
     uv run python3 agent_remote.py kill "$codex_session" > /dev/null 2>&1 || true
     tmux kill-session -t "$codex_tmux" 2>/dev/null || true
@@ -413,7 +413,7 @@ EOF
         report "✗ Codex start 意外退出（rc=$codex_rc）"
         log_info "=== start_codex.log ==="
         cat "$RESULTS_DIR/start_codex.log"
-        local server_log="$HOME/.agent-remote/startup.log"
+        local server_log="$HOME/.agents-remote/startup.log"
         if [ -f "$server_log" ]; then
             log_info "=== startup.log（最后 20 行）==="
             tail -20 "$server_log"
@@ -690,7 +690,7 @@ main() {
     fi
 
     # 步骤 3：模拟用户安装
-    PACK_FILE_PATH=$(ls /tmp/agent-remote-*.tgz 2>/dev/null | head -1)
+    PACK_FILE_PATH=$(ls /tmp/agents-remote-*.tgz 2>/dev/null | head -1)
     if [ -z "$PACK_FILE_PATH" ]; then
         log_error "找不到打包好的 .tgz 文件"
         exit 1

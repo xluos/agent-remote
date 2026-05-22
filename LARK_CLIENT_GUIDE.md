@@ -86,8 +86,8 @@ agents-remote lark restart
 
 | 文件路径 | 说明 | 格式 |
 |---------|------|------|
-| `/tmp/agent-remote/lark.pid` | 进程 PID | 纯文本，一行 |
-| `/tmp/agent-remote/lark.status` | 状态信息 | JSON 格式 |
+| `/tmp/agents-remote/lark.pid` | 进程 PID | 纯文本，一行 |
+| `/tmp/agents-remote/lark.status` | 状态信息 | JSON 格式 |
 | `lark_client.log` | 运行日志 | 纯文本，追加写入 |
 
 **状态文件格式：**
@@ -173,8 +173,8 @@ ps aux | grep "lark_client/main.py"
 kill -9 <PID>
 
 # 3. 清理残留文件
-rm -f /tmp/agent-remote/lark.pid
-rm -f /tmp/agent-remote/lark.status
+rm -f /tmp/agents-remote/lark.pid
+rm -f /tmp/agents-remote/lark.status
 
 # 4. 重新启动
 agents-remote lark start
@@ -220,7 +220,7 @@ EOF
 **强制终止：**
 ```bash
 # 获取 PID
-cat /tmp/agent-remote/lark.pid
+cat /tmp/agents-remote/lark.pid
 
 # 强制终止
 kill -9 <PID>
@@ -233,7 +233,7 @@ agents-remote lark stop
 
 ### macOS（launchd）
 
-创建 `~/Library/LaunchAgents/com.agent-remote.lark.plist`：
+创建 `~/Library/LaunchAgents/com.agents-remote.lark.plist`：
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -241,7 +241,7 @@ agents-remote lark stop
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.agent-remote.lark</string>
+    <string>com.agents-remote.lark</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
@@ -265,7 +265,7 @@ agents-remote lark stop
 
 加载：
 ```bash
-launchctl load ~/Library/LaunchAgents/com.agent-remote.lark.plist
+launchctl load ~/Library/LaunchAgents/com.agents-remote.lark.plist
 ```
 
 ### Linux（systemd）

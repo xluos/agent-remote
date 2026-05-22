@@ -10,7 +10,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from utils.session import USER_DATA_DIR, get_env_file
 
-# 加载 .env 文件，优先从 ~/.agent-remote/.env 读取
+# 加载 .env 文件，优先从 ~/.agents-remote/.env 读取
 _env_file = get_env_file()
 _old_env_file = Path(__file__).resolve().parent.parent / ".env"
 

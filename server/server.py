@@ -186,11 +186,11 @@ class OutputWatcher:
         self._debug_screen = debug_screen  # --debug-screen 开启后才写 _screen.log
         self._debug_verbose = debug_verbose  # --debug-verbose 开启后输出 indicator/repr 等诊断信息
         log_name = _log_filename(session_name)
-        self._debug_file = f"/tmp/agent-remote/{log_name}_messages.log"
+        self._debug_file = f"/tmp/agents-remote/{log_name}_messages.log"
         # PTY 原始字节流日志（仅 --debug-screen 开启时使用）
         self._raw_log_fd = None
         if debug_screen:
-            raw_log_path = f"/tmp/agent-remote/{log_name}_pty_raw.log"
+            raw_log_path = f"/tmp/agents-remote/{log_name}_pty_raw.log"
             try:
                 self._raw_log_fd = open(raw_log_path, "a", encoding="ascii", buffering=1)
             except Exception:
@@ -216,10 +216,10 @@ class OutputWatcher:
         self.last_window: Optional[ClaudeWindow] = None
         # PTY 静止后延迟重刷：消除窗口平滑的延迟效应
         self._reflush_handle: Optional[asyncio.TimerHandle] = None
-        # 调试日志截断长度（可通过 ~/.agent-remote/.debug_config 配置）
+        # 调试日志截断长度（可通过 ~/.agents-remote/.debug_config 配置）
         self._debug_truncate_len = 80
         try:
-            cfg_path = os.path.expanduser("~/.agent-remote/.debug_config")
+            cfg_path = os.path.expanduser("~/.agents-remote/.debug_config")
             if os.path.exists(cfg_path):
                 import json as _json
                 with open(cfg_path) as _f:
@@ -664,7 +664,7 @@ class OutputWatcher:
         每个字符的 fg/bg 颜色通过 ANSI SGR 序列直接嵌入，
         cat _screen.log 即可在终端看到与 pyte 渲染一致的着色效果。
         """
-        base = f"/tmp/agent-remote/{_log_filename(self._session_name)}"
+        base = f"/tmp/agents-remote/{_log_filename(self._session_name)}"
         try:
             # pyte 屏幕快照（覆盖写，只保留最新一帧）
             screen_path = base + "_screen.log"
@@ -911,11 +911,11 @@ class ProxyServer:
                not hasattr(handler, '_debug_handler'):
                 root_logger.removeHandler(handler)
 
-        # 重定向 sys.stderr 到 ~/.agent-remote/server.error.log
+        # 重定向 sys.stderr 到 ~/.agents-remote/server.error.log
         # 注意：这不会影响外层的 2>> startup.log，但 Python 的 stderr 输出会走这里
         # 适用于：print(..., file=sys.stderr)、logging 的 StreamHandler 等
         # 不适用于：C 扩展模块直接写文件描述符 2、解释器崩溃等底层错误
-        error_log_path = os.path.expanduser('~/.agent-remote/server.error.log')
+        error_log_path = os.path.expanduser('~/.agents-remote/server.error.log')
         sys.stderr = open(error_log_path, 'w', encoding='utf-8')
         logger.info(f"已重定向 stderr 到 {error_log_path}")
 
@@ -1007,7 +1007,7 @@ class ProxyServer:
                     _ms = int((_t.time() % 1) * 1000)
                     _log_line = f"{_ts}.{_ms:03d} [Server] ERROR {msg}\n"
                     _home = os.path.expanduser("~")
-                    _log_file = os.path.join(_home, ".agent-remote", "startup.log")
+                    _log_file = os.path.join(_home, ".agents-remote", "startup.log")
                     with open(_log_file, "a", encoding="utf-8") as _f:
                         _f.write(_log_line)
                 except Exception:

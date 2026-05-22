@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 
 _TOKEN = 'c4d804fc1fe4337132e4da90fdb690c9'
-_USER_DIR = Path.home() / '.agent-remote'
+_USER_DIR = Path.home() / '.agents-remote'
 _ID_FILE = _USER_DIR / 'machine-id'
 _REPORTED_VERSION_FILE = _USER_DIR / 'init_install_version'
 

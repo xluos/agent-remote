@@ -1,7 +1,7 @@
 """
 机器标识模块
 
-持久化 UUID（~/.agent-remote/machine-id），用于 Mixpanel distinct_id 和跨机器去重。
+持久化 UUID（~/.agents-remote/machine-id），用于 Mixpanel distinct_id 和跨机器去重。
 """
 
 import os
@@ -10,14 +10,14 @@ import uuid
 from pathlib import Path
 
 
-_USER_DIR = Path.home() / ".agent-remote"
+_USER_DIR = Path.home() / ".agents-remote"
 _ID_FILE = _USER_DIR / "machine-id"
-_OLD_ID_FILE = Path.home() / ".agent-remote-id"
+_OLD_ID_FILE = Path.home() / ".agents-remote-id"
 _machine_id: str | None = None
 
 
 def get_machine_id() -> str:
-    """获取（或生成）机器 UUID，持久化到 ~/.agent-remote/machine-id"""
+    """获取（或生成）机器 UUID，持久化到 ~/.agents-remote/machine-id"""
     global _machine_id
     if _machine_id:
         return _machine_id

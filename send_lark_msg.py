@@ -9,7 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os
 
-load_dotenv(Path.home() / ".agent-remote" / ".env")
+load_dotenv(Path.home() / ".agents-remote" / ".env")
 
 import lark_oapi as lark
 from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody

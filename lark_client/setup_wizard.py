@@ -581,7 +581,7 @@ def _read_env_file(path: Path) -> list[str]:
 
 def write_env_file(app_id: str, app_secret: str) -> Path:
     """
-    写入 app_id 和 app_secret 到 ~/.agent-remote/.env。
+    写入 app_id 和 app_secret 到 ~/.agents-remote/.env。
 
     如果文件已存在，只更新 FEISHU_APP_ID 和 FEISHU_APP_SECRET 两行，保留其他配置。
     如果文件不存在，从 .env.example 生成。

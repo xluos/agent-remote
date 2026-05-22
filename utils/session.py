@@ -16,8 +16,8 @@ import uuid
 
 
 # 常量
-SOCKET_DIR = Path("/tmp/agent-remote")
-USER_DATA_DIR = Path.home() / ".agent-remote"
+SOCKET_DIR = Path("/tmp/agents-remote")
+USER_DATA_DIR = Path.home() / ".agents-remote"
 TMUX_SESSION_PREFIX = "rc-"
 
 
@@ -112,7 +112,7 @@ def tmux_create_session(session_name: str, command: str, detached: bool = True) 
     args.extend(["-x", "200", "-y", "50"])  # 默认大小
 
     # 将 stderr 重定向到 startup.log，捕获 Python 启动错误（如 ModuleNotFoundError）
-    # startup.log 位于 ~/.agent-remote/startup.log
+    # startup.log 位于 ~/.agents-remote/startup.log
     startup_log = USER_DATA_DIR / "startup.log"
     startup_log.parent.mkdir(parents=True, exist_ok=True)
     # 直接在命令末尾添加重定向，使用 str(startup_log) 确保路径正确展开
