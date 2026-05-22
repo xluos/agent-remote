@@ -51,9 +51,93 @@ except Exception:
     _VERSION = "unknown"
 
 
+def _pick_session(title="选择会话", sessions=None):
+    """交互式选择一个活跃会话，返回会话名；无会话或取消返回 None。"""
+    if sessions is None:
+        sessions = list_active_sessions()
+    if not sessions:
+        print("没有活跃的会话")
+        return None
+    from utils.picker import select as _select
+    labels = []
+    for s in sessions:
+        cli = s.get("cli_type", "claude")
+        labels.append(f"{cli:<6} {s['name']}  (PID {s.get('pid', '?')})")
+    i = _select(title, labels)
+    if i is None:
+        print("已取消")
+        return None
+    return sessions[i]["name"]
+
+
+def _gen_session_name():
+    """未指定会话名时生成默认名（与 cla 一致：当前目录 + 时间戳）。"""
+    return f"{os.getcwd()}_{datetime.now().strftime('%m%d_%H%M%S')}"
+
+
+def cmd_menu(args=None):
+    """无子命令时的交互式主菜单。"""
+    from utils.picker import select as _select
+    actions = [
+        ("连接已有会话", "attach"),
+        ("新建会话", "new"),
+        ("查看会话列表", "list"),
+        ("终止会话", "kill"),
+        ("飞书客户端", "lark"),
+        ("退出", "quit"),
+    ]
+    choice = _select("Agent Remote — 选择操作", [a[0] for a in actions])
+    if choice is None:
+        return 0
+    action = actions[choice][1]
+
+    if action == "quit":
+        return 0
+    if action == "list":
+        return cmd_list(argparse.Namespace())
+    if action == "attach":
+        name = _pick_session("选择要连接的会话")
+        if not name:
+            return 1
+        return cmd_attach(argparse.Namespace(name=name))
+    if action == "kill":
+        name = _pick_session("选择要终止的会话")
+        if not name:
+            return 1
+        return cmd_kill(argparse.Namespace(name=name))
+    if action == "new":
+        cli_idx = _select("选择后端 CLI", ["claude", "codex"])
+        if cli_idx is None:
+            return 1
+        cli = ["claude", "codex"][cli_idx]
+        return cmd_start(argparse.Namespace(
+            name=None, claude_args=[], debug_screen=False, debug_verbose=False, cli=cli,
+        ))
+    if action == "lark":
+        return _menu_lark()
+    return 0
+
+
+def _menu_lark():
+    """飞书客户端管理子菜单。"""
+    from utils.picker import select as _select
+    items = [("启动", cmd_lark_start), ("停止", cmd_lark_stop),
+             ("重启", cmd_lark_restart), ("状态", cmd_lark_status), ("返回", None)]
+    c = _select("飞书客户端", [i[0] for i in items])
+    if c is None:
+        return 0
+    label, fn = items[c]
+    if fn is None:
+        return cmd_menu()
+    return fn(argparse.Namespace())
+
+
 def cmd_start(args):
     """启动新会话；同名 daemon 已活则直接 attach（智能 attach）"""
     session_name = args.name
+    if not session_name:
+        session_name = _gen_session_name()
+        print(f"未指定会话名，使用默认: {session_name}")
 
     # 智能 attach：socket + 进程都活 → 直接 attach 到现有 daemon
     if is_session_active(session_name):
@@ -192,6 +276,10 @@ def cmd_start(args):
 def cmd_attach(args):
     """连接到已有会话"""
     session_name = args.name
+    if not session_name:
+        session_name = _pick_session("选择要连接的会话")
+        if not session_name:
+            return 1
 
     # 检查会话是否存在
     if not is_session_active(session_name):
@@ -255,6 +343,10 @@ def _find_session_by_pid(pid: int):
 def cmd_kill(args):
     """终止会话"""
     session_name = args.name
+    if not session_name:
+        session_name = _pick_session("选择要终止的会话")
+        if not session_name:
+            return 1
 
     # 若参数是纯数字，按 PID 反查会话名
     if session_name.isdigit():
@@ -289,6 +381,10 @@ def cmd_kill(args):
 def cmd_status(args):
     """显示会话状态（连接到会话并获取状态）"""
     session_name = args.name
+    if not session_name:
+        session_name = _pick_session("选择要查看的会话")
+        if not session_name:
+            return 1
 
     if not is_session_active(session_name):
         print(f"错误: 会话 '{session_name}' 不存在")
@@ -796,6 +892,7 @@ def cmd_lark(args):
 
 def main():
     parser = argparse.ArgumentParser(
+        prog="agent-remote",
         description="Agent Remote - 双端共享 Claude CLI 工具",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
@@ -851,7 +948,7 @@ def main():
 
     # start 命令
     start_parser = subparsers.add_parser("start", help="启动新会话")
-    start_parser.add_argument("name", help="会话名称")
+    start_parser.add_argument("name", nargs="?", default=None, help="会话名称（省略则用当前目录+时间戳）")
     start_parser.add_argument(
         "claude_args",
         nargs="*",
@@ -877,7 +974,7 @@ def main():
 
     # attach 命令
     attach_parser = subparsers.add_parser("attach", help="连接到已有会话")
-    attach_parser.add_argument("name", help="会话名称")
+    attach_parser.add_argument("name", nargs="?", default=None, help="会话名称（省略则交互选择）")
     attach_parser.set_defaults(func=cmd_attach)
 
     # list 命令
@@ -886,12 +983,12 @@ def main():
 
     # kill 命令
     kill_parser = subparsers.add_parser("kill", help="终止会话")
-    kill_parser.add_argument("name", help="会话名称或 PID")
+    kill_parser.add_argument("name", nargs="?", default=None, help="会话名称或 PID（省略则交互选择）")
     kill_parser.set_defaults(func=cmd_kill)
 
     # status 命令
     status_parser = subparsers.add_parser("status", help="显示会话状态")
-    status_parser.add_argument("name", help="会话名称")
+    status_parser.add_argument("name", nargs="?", default=None, help="会话名称（省略则交互选择）")
     status_parser.set_defaults(func=cmd_status)
 
     # lark 命令（带子命令）
@@ -959,6 +1056,9 @@ def main():
     args, remaining = parser.parse_known_args()
 
     if args.command is None:
+        # 交互式终端 → 进主菜单；非交互（管道/重定向）→ 打印帮助
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            return cmd_menu(args)
         parser.print_help()
         return 0
 

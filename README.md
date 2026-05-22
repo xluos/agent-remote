@@ -105,11 +105,15 @@ agent-remote lark init
 ### 管理命令 (一般不需要)
 
 ```bash
-agent-remote start <会话名>     # 启动新会话
-agent-remote attach <会话名>    # 连接现有会话
+agent-remote                    # 不带子命令 → 进入交互式主菜单（连接/新建/列表/终止/飞书）
+agent-remote start [会话名]     # 启动新会话（省略会话名则用「当前目录+时间戳」）
+agent-remote attach [会话名]    # 连接现有会话（省略则方向键选择）
 agent-remote list               # 查看所有会话
-agent-remote kill <会话名>      # 终止会话
+agent-remote kill [会话名]      # 终止会话（省略则方向键选择）
+agent-remote status [会话名]    # 查看会话状态（省略则方向键选择）
 ```
+
+> `attach` / `kill` / `status` 省略会话名时会列出活跃会话，用 ↑/↓ 选择、Enter 确认（非交互终端自动降级为编号输入）。
 
 ### 终端快捷键
 
