@@ -178,8 +178,8 @@ This project is forked from [**yyzybb537/remote_claude**](https://github.com/yyz
 The fork exists to:
 
 1. Carry the project under a name that reflects its broader scope (Claude / Codex / future agent CLIs, not just Claude Code)
-2. Cleanly split out the reusable runtime into [`agent-remote-core`](https://github.com/xluos/agent-remote-core) so other apps (agentara, third-party TUIs) can embed it without inheriting the Feishu bridge
-3. Maintain a TypeScript SDK at [`@agent-remote/sdk`](https://github.com/xluos/agent-remote-sdk) for cross-language consumers
+2. Cleanly split out the reusable runtime into [`agents-remote-core`](https://github.com/xluos/agents-remote-core) so other apps (agentara, third-party TUIs) can embed it without inheriting the Feishu bridge
+3. Maintain a TypeScript SDK at [`@agents-remote/sdk`](https://github.com/xluos/agents-remote-sdk) for cross-language consumers
 
 **What's new since the fork**: namespace isolation (`--data-dir`), smart attach on duplicate start, automatic Claude session-id persistence (a machine reboot resumes the same conversation), an interactive session picker + main menu, runtime dependency preflight with install guidance, and a `serve --foreground` mode for embedded scenarios like claude-squad.
 
