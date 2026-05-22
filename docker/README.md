@@ -43,13 +43,13 @@ cat test-results/test_report.md
 
 ## 测试流程
 
-Docker 测试模拟真实用户从 npm 安装 agent-remote 的完整流程：
+Docker 测试模拟真实用户从 npm 安装 agents-remote 的完整流程：
 
 1. **环境检查** - 验证 Python、uv、tmux、npm、Claude CLI
 2. **打包 npm 包** - 执行 `npm pack` 生成 `.tgz` 文件
 3. **模拟用户安装** - 在临时目录执行 `npm install <packaged_file>`
 4. **验证 postinstall** - 检查 .venv、pyproject.toml、Python 依赖
-5. **测试基本命令** - 验证 `agent-remote --help`、`agent-remote list`、`cla` 脚本
+5. **测试基本命令** - 验证 `agents-remote --help`、`agents-remote list`、`cla` 脚本
 6. **执行单元测试** - 运行独立单元测试（不需要活跃会话）
 7. **文件完整性检查** - 验证关键文件是否存在
 8. **生成测试报告** - 汇总测试结果，生成 Markdown 报告

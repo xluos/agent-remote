@@ -299,12 +299,12 @@ EOF
         report "✓ lark start 不阻塞（rc=$rc）"
     fi
 
-    # 5-4：验证 agent-remote start 能成功启动会话
+    # 5-4：验证 agents-remote start 能成功启动会话
     # 判断逻辑：
     #   - start = 启动 server（tmux）+ attach client，正常运行时会阻塞等待 Claude 交互
     #   - 若 20s 内自然退出 → 说明启动失败，捕获日志报错
-    #   - 若 20s 超时仍在运行 → 再检查 socket 和 agent-remote list，均正常才算成功
-    log_info "验证 agent-remote start 能成功启动会话（预期 20s 内不退出）..."
+    #   - 若 20s 超时仍在运行 → 再检查 socket 和 agents-remote list，均正常才算成功
+    log_info "验证 agents-remote start 能成功启动会话（预期 20s 内不退出）..."
 
     local session="docker-test-session"
     # socket 路径使用 MD5 哈希（避免 AF_UNIX path too long），tmux 会话名用原始名
@@ -350,10 +350,10 @@ EOF
     local list_out
     list_out=$(uv run python3 agent_remote.py list 2>&1)
     if echo "$list_out" | grep -q "$session"; then
-        log_success "agent-remote list 中可见会话: $session"
+        log_success "agents-remote list 中可见会话: $session"
         report "✓ start 命令成功：socket 就绪，会话可见"
     else
-        log_error "agent-remote list 中未找到会话: $session"
+        log_error "agents-remote list 中未找到会话: $session"
         log_info "list 输出：$list_out"
         report "✗ start 命令：会话在 list 中不可见"
         tmux kill-session -t "$tmux_name" 2>/dev/null || true
@@ -394,8 +394,8 @@ EOF
         report "✓ 负面测试：启动失败被正确检测（rc=$fail_rc）"
     fi
 
-    # 5-6：验证 agent-remote start --cli codex 能成功启动 Codex 会话
-    log_info "验证 agent-remote start --cli codex 能成功启动会话（预期 20s 内不退出）..."
+    # 5-6：验证 agents-remote start --cli codex 能成功启动 Codex 会话
+    log_info "验证 agents-remote start --cli codex 能成功启动会话（预期 20s 内不退出）..."
 
     local codex_session="docker-codex-session"
     local codex_hash=$(echo -n "$codex_session" | md5sum | cut -d' ' -f1)
@@ -435,10 +435,10 @@ EOF
     local codex_list_out
     codex_list_out=$(uv run python3 agent_remote.py list 2>&1)
     if echo "$codex_list_out" | grep -q "$codex_session"; then
-        log_success "agent-remote list 中可见 Codex 会话: $codex_session"
+        log_success "agents-remote list 中可见 Codex 会话: $codex_session"
         report "✓ Codex start 成功：socket 就绪，会话可见"
     else
-        log_error "agent-remote list 中未找到 Codex 会话: $codex_session"
+        log_error "agents-remote list 中未找到 Codex 会话: $codex_session"
         log_info "list 输出：$codex_list_out"
         report "✗ Codex start：会话在 list 中不可见"
         tmux kill-session -t "$codex_tmux" 2>/dev/null || true
@@ -455,31 +455,31 @@ test_basic_commands() {
     local install_dir="$1"
     cd "$install_dir/node_modules/agent-remote"
 
-    # 测试 agent-remote --help
-    log_info "测试 agent-remote --help..."
+    # 测试 agents-remote --help
+    log_info "测试 agents-remote --help..."
     if uv run python3 agent_remote.py --help > "$RESULTS_DIR/cmd_help.log" 2>&1; then
         if grep -q "双端共享 Claude CLI 工具" "$RESULTS_DIR/cmd_help.log"; then
-            log_success "agent-remote --help 输出正确"
-            report "✓ agent-remote --help 输出正确"
+            log_success "agents-remote --help 输出正确"
+            report "✓ agents-remote --help 输出正确"
         else
-            log_error "agent-remote --help 输出异常"
-            report "✗ agent-remote --help 输出异常"
+            log_error "agents-remote --help 输出异常"
+            report "✗ agents-remote --help 输出异常"
             return 1
         fi
     else
-        log_error "agent-remote --help 执行失败"
-        report "✗ agent-remote --help 执行失败"
+        log_error "agents-remote --help 执行失败"
+        report "✗ agents-remote --help 执行失败"
         return 1
     fi
 
-    # 测试 agent-remote list
-    log_info "测试 agent-remote list..."
+    # 测试 agents-remote list
+    log_info "测试 agents-remote list..."
     if uv run python3 agent_remote.py list > "$RESULTS_DIR/cmd_list.log" 2>&1; then
-        log_success "agent-remote list 执行成功"
-        report "✓ agent-remote list 执行成功"
+        log_success "agents-remote list 执行成功"
+        report "✓ agents-remote list 执行成功"
     else
-        log_error "agent-remote list 执行失败"
-        report "✗ agent-remote list 执行失败"
+        log_error "agents-remote list 执行失败"
+        report "✗ agents-remote list 执行失败"
         return 1
     fi
 

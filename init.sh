@@ -58,7 +58,7 @@ setup_path() {
     # 未写入则追加
     if ! grep -qF '$HOME/.local/bin' "$PROFILE" 2>/dev/null; then
         echo "" >> "$PROFILE"
-        echo '# agent-remote: 确保 ~/.local/bin 在 PATH' >> "$PROFILE"
+        echo '# agents-remote: 确保 ~/.local/bin 在 PATH' >> "$PROFILE"
         echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$PROFILE"
     fi
 
@@ -220,7 +220,7 @@ check_tmux() {
             elif command -v zypper &> /dev/null; then
                 _sudo_or_skip zypper install -y tmux || true
             else
-                print_warning "无法识别包管理器，请手动安装 tmux 或运行 agent-remote deps"
+                print_warning "无法识别包管理器，请手动安装 tmux 或运行 agents-remote deps"
             fi
         fi
         print_success "tmux 安装成功"
@@ -252,8 +252,8 @@ check_tmux() {
                 print_success "tmux 已升级至 $(tmux -V)"
             else
                 print_warning "包管理器安装后版本仍不满足要求（$(tmux -V)），需要 ${REQUIRED_MAJOR}.${REQUIRED_MINOR}+"
-                print_info "请运行 'agent-remote deps' 从源码编译安装 tmux ${REQUIRED_MAJOR}.${REQUIRED_MINOR}+"
-                WARNINGS+=("tmux 版本不满足要求（$(tmux -V)），需要 ${REQUIRED_MAJOR}.${REQUIRED_MINOR}+，请运行 agent-remote deps 升级")
+                print_info "请运行 'agents-remote deps' 从源码编译安装 tmux ${REQUIRED_MAJOR}.${REQUIRED_MINOR}+"
+                WARNINGS+=("tmux 版本不满足要求（$(tmux -V)），需要 ${REQUIRED_MAJOR}.${REQUIRED_MINOR}+，请运行 agents-remote deps 升级")
             fi
         fi
     else
@@ -265,8 +265,8 @@ check_tmux() {
             local _cur_ver=""
             command -v tmux &> /dev/null && _cur_ver="（当前: $(tmux -V)）"
             print_warning "tmux 安装后版本仍不满足要求${_cur_ver}，需要 ${REQUIRED_MAJOR}.${REQUIRED_MINOR}+"
-            print_info "请运行 'agent-remote deps' 从源码编译安装 tmux ${REQUIRED_MAJOR}.${REQUIRED_MINOR}+"
-            WARNINGS+=("tmux 版本不满足要求，需要 ${REQUIRED_MAJOR}.${REQUIRED_MINOR}+，请运行 agent-remote deps 升级")
+            print_info "请运行 'agents-remote deps' 从源码编译安装 tmux ${REQUIRED_MAJOR}.${REQUIRED_MINOR}+"
+            WARNINGS+=("tmux 版本不满足要求，需要 ${REQUIRED_MAJOR}.${REQUIRED_MINOR}+，请运行 agents-remote deps 升级")
         fi
     fi
 }
@@ -420,7 +420,7 @@ configure_shell() {
     print_header "安装快捷命令"
 
     SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-    chmod +x "$SCRIPT_DIR/bin/cla" "$SCRIPT_DIR/bin/cl" "$SCRIPT_DIR/bin/cx" "$SCRIPT_DIR/bin/cdx" "$SCRIPT_DIR/bin/agent-remote" 2>/dev/null || true
+    chmod +x "$SCRIPT_DIR/bin/cla" "$SCRIPT_DIR/bin/cl" "$SCRIPT_DIR/bin/cx" "$SCRIPT_DIR/bin/cdx" "$SCRIPT_DIR/bin/agents-remote" 2>/dev/null || true
 
     # 优先 /usr/local/bin，权限不够则选 ~/bin 或 ~/.local/bin 中已在 PATH 里的
     BIN_DIR="/usr/local/bin"
@@ -442,7 +442,7 @@ configure_shell() {
             local _PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
             if ! grep -qF "$HOME/.local/bin" "$_RC" 2>/dev/null; then
                 echo "" >> "$_RC"
-                echo "# agent-remote: 快捷命令路径" >> "$_RC"
+                echo "# agents-remote: 快捷命令路径" >> "$_RC"
                 echo "$_PATH_LINE" >> "$_RC"
                 print_success "已自动将 \$HOME/.local/bin 加入 PATH（写入 $_RC）"
             fi
@@ -452,23 +452,25 @@ configure_shell() {
         ln -sf "$SCRIPT_DIR/bin/cl"            "$BIN_DIR/cl"           2>/dev/null || true
         ln -sf "$SCRIPT_DIR/bin/cx"            "$BIN_DIR/cx"           2>/dev/null || true
         ln -sf "$SCRIPT_DIR/bin/cdx"           "$BIN_DIR/cdx"          2>/dev/null || true
-        ln -sf "$SCRIPT_DIR/bin/agent-remote" "$BIN_DIR/agent-remote" 2>/dev/null || true
-        ln -sf "$SCRIPT_DIR/bin/agent-remote" "$BIN_DIR/agt"          2>/dev/null || true
+        ln -sf "$SCRIPT_DIR/bin/agents-remote" "$BIN_DIR/agents-remote" 2>/dev/null || true
+        ln -sf "$SCRIPT_DIR/bin/agents-remote" "$BIN_DIR/agent-remote"  2>/dev/null || true
+        ln -sf "$SCRIPT_DIR/bin/agents-remote" "$BIN_DIR/agt"           2>/dev/null || true
     else
         ln -sf "$SCRIPT_DIR/bin/cl"            "$BIN_DIR/cl"           2>/dev/null || true
         ln -sf "$SCRIPT_DIR/bin/cx"            "$BIN_DIR/cx"           2>/dev/null || true
         ln -sf "$SCRIPT_DIR/bin/cdx"           "$BIN_DIR/cdx"          2>/dev/null || true
-        ln -sf "$SCRIPT_DIR/bin/agent-remote" "$BIN_DIR/agent-remote" 2>/dev/null || true
-        ln -sf "$SCRIPT_DIR/bin/agent-remote" "$BIN_DIR/agt"          2>/dev/null || true
+        ln -sf "$SCRIPT_DIR/bin/agents-remote" "$BIN_DIR/agents-remote" 2>/dev/null || true
+        ln -sf "$SCRIPT_DIR/bin/agents-remote" "$BIN_DIR/agent-remote"  2>/dev/null || true
+        ln -sf "$SCRIPT_DIR/bin/agents-remote" "$BIN_DIR/agt"           2>/dev/null || true
     fi
 
-    print_success "已安装 cla、cl、cx、cdx 和 agent-remote (agt) 到 $BIN_DIR"
+    print_success "已安装 cla、cl、cx、cdx 和 agents-remote (agt) 到 $BIN_DIR"
     print_info "  cla           - 启动飞书客户端 + 以当前目录路径+时间戳为会话名启动 Claude"
     print_info "  cl            - 同 cla，但跳过权限确认"
     print_info "  cx            - 启动飞书客户端 + 以当前目录路径+时间戳为会话名启动 Codex（跳过权限）"
     print_info "  cdx           - 同 cx，但需确认权限"
-    print_info "  agent-remote - Agent Remote 主命令（start/attach/list/kill/lark）"
-    print_info "  agt          - agent-remote 的短别名（同一程序）"
+    print_info "  agents-remote - Agent Remote 主命令（start/attach/list/kill/lark）"
+    print_info "  agt          - agents-remote 的短别名（同一程序）"
 
     # 安装 shell 自动补全
     local COMPLETION_LINE="source \"$SCRIPT_DIR/scripts/completion.sh\""
@@ -483,7 +485,7 @@ configure_shell() {
         print_info "自动补全已配置（$SHELL_RC）"
     else
         echo "" >> "$SHELL_RC"
-        echo "# agent-remote 自动补全" >> "$SHELL_RC"
+        echo "# agents-remote 自动补全" >> "$SHELL_RC"
         echo "$COMPLETION_LINE" >> "$SHELL_RC"
         print_success "已添加自动补全到 $SHELL_RC（重新打开终端后生效）"
     fi

@@ -7,7 +7,7 @@
 ### 启动飞书客户端
 
 ```bash
-agent-remote lark start
+agents-remote lark start
 ```
 
 **输出示例：**
@@ -17,8 +17,8 @@ agent-remote lark start
   PID: 12345
   日志: /path/to/lark_client.log
 
-使用 'agent-remote lark status' 查看状态
-使用 'agent-remote lark stop' 停止
+使用 'agents-remote lark status' 查看状态
+使用 'agents-remote lark stop' 停止
 ```
 
 **特性：**
@@ -29,7 +29,7 @@ agent-remote lark start
 ### 查看运行状态
 
 ```bash
-agent-remote lark status
+agents-remote lark status
 ```
 
 **输出示例：**
@@ -58,7 +58,7 @@ PID:      12345
 ### 停止飞书客户端
 
 ```bash
-agent-remote lark stop
+agents-remote lark stop
 ```
 
 **输出示例：**
@@ -75,7 +75,7 @@ agent-remote lark stop
 ### 重启飞书客户端
 
 ```bash
-agent-remote lark restart
+agents-remote lark restart
 ```
 
 等同于先执行 `stop`，再执行 `start`。
@@ -177,7 +177,7 @@ rm -f /tmp/agent-remote/lark.pid
 rm -f /tmp/agent-remote/lark.status
 
 # 4. 重新启动
-agent-remote lark start
+agents-remote lark start
 ```
 
 ### 4. 日志文件过大
@@ -190,13 +190,13 @@ ls -lh lark_client.log
 **归档旧日志：**
 ```bash
 # 1. 停止客户端
-agent-remote lark stop
+agents-remote lark stop
 
 # 2. 归档日志
 mv lark_client.log lark_client.log.$(date +%Y%m%d_%H%M%S)
 
 # 3. 重新启动
-agent-remote lark start
+agents-remote lark start
 ```
 
 **或使用 logrotate（推荐）：**
@@ -226,7 +226,7 @@ cat /tmp/agent-remote/lark.pid
 kill -9 <PID>
 
 # 清理文件
-agent-remote lark stop
+agents-remote lark stop
 ```
 
 ## 🔄 开机自启动（可选）
@@ -310,9 +310,9 @@ sudo systemctl status agent-remote-lark
 #!/bin/bash
 
 while true; do
-    if ! agent-remote lark status > /dev/null 2>&1; then
+    if ! agents-remote lark status > /dev/null 2>&1; then
         echo "[$(date)] 飞书客户端未运行，正在重启..." | tee -a monitor.log
-        agent-remote lark start
+        agents-remote lark start
     fi
     sleep 60
 done
@@ -348,7 +348,7 @@ def health():
 在启动时设置环境变量：
 
 ```bash
-LARK_LOG_FILE=/custom/path/lark.log agent-remote lark start
+LARK_LOG_FILE=/custom/path/lark.log agents-remote lark start
 ```
 
 （需要在代码中支持此环境变量，当前未实现）

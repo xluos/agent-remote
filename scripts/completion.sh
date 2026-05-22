@@ -1,7 +1,7 @@
-# agent-remote shell 自动补全（支持 bash 和 zsh）
+# agents-remote shell 自动补全（支持 bash 和 zsh）
 
 _agent_remote_get_sessions() {
-    agent-remote list 2>/dev/null | awk 'NR>3 && NF>0 && !/^-/ && !/^共/ {print $1}'
+    agents-remote list 2>/dev/null | awk 'NR>3 && NF>0 && !/^-/ && !/^共/ {print $1}'
 }
 
 if [[ -n "$ZSH_VERSION" ]]; then
@@ -46,7 +46,7 @@ if [[ -n "$ZSH_VERSION" ]]; then
                 ;;
         esac
     }
-    compdef _agent_remote_zsh agent-remote
+    compdef _agent_remote_zsh agents-remote
 else
     # bash 补全
     _agent_remote_bash() {
@@ -74,5 +74,5 @@ else
                 ;;
         esac
     }
-    complete -F _agent_remote_bash agent-remote
+    complete -F _agent_remote_bash agents-remote
 fi

@@ -10,7 +10,7 @@ Agent Remote - 双端共享 Claude CLI 工具
   status <name>      显示会话状态
   lark               飞书客户端管理（start/stop/restart/status）
   stats              查看使用统计
-  update             更新 agent-remote 到最新版本
+  update             更新 agents-remote 到最新版本
 """
 
 import argparse
@@ -137,7 +137,7 @@ def _runtime_install_hint(dep):
     import platform
     is_mac = platform.system() == "Darwin"
     if dep == "tmux":
-        cmds = ["agent-remote deps        # 自动检测，按需源码编译 tmux 3.6a（无需 root）",
+        cmds = ["agents-remote deps        # 自动检测，按需源码编译 tmux 3.6a（无需 root）",
                 "brew install tmux" if is_mac else "sudo apt install tmux  # 或 yum/dnf install tmux"]
         return ("tmux（server 在后台 tmux 会话里运行，需 >= 3.6）", cmds)
     if dep == "claude":
@@ -163,7 +163,7 @@ def _require_runtime(cli_type):
         for h in hints:
             print(f"      {h}")
         print()
-    print(f"{YELLOW}提示：`agent-remote deps` 可一次性检查全部依赖并按需自动安装 tmux。{RESET}\n")
+    print(f"{YELLOW}提示：`agents-remote deps` 可一次性检查全部依赖并按需自动安装 tmux。{RESET}\n")
     return False
 
 
@@ -189,7 +189,7 @@ def cmd_start(args):
     # 检查 tmux 会话是否存在
     if tmux_session_exists(session_name):
         print(f"错误: tmux 会话 'rc-{session_name}' 已存在")
-        print("请先使用 'agent-remote kill {session_name}' 清理")
+        print("请先使用 'agents-remote kill {session_name}' 清理")
         return 1
 
     ensure_socket_dir()
@@ -212,7 +212,7 @@ def cmd_start(args):
     # 后续起 → --resume <uuid>，跟之前对话续上
     #
     # 显式传 > 自动注入：如果用户在 claude_args 里已经传了 --session-id /
-    # --resume，agent-remote 不再注入，避免参数冲突
+    # --resume，agents-remote 不再注入，避免参数冲突
     _SESSION_ID_FLAGS = {"--session-id", "--resume"}
     user_provided_session_flag = any(
         arg in _SESSION_ID_FLAGS or any(arg.startswith(f + "=") for f in _SESSION_ID_FLAGS)
@@ -324,7 +324,7 @@ def cmd_attach(args):
     # 检查会话是否存在
     if not is_session_active(session_name):
         print(f"错误: 会话 '{session_name}' 不存在")
-        print("使用 'agent-remote list' 查看可用会话")
+        print("使用 'agents-remote list' 查看可用会话")
         return 1
 
     print(f"连接到会话: {session_name}")
@@ -483,7 +483,7 @@ def cmd_lark_start(args):
             print(f"PID: {status['pid']}")
             print(f"启动时间: {status['start_time']}")
             print(f"运行时长: {status['uptime']}")
-        print("\n使用 'agent-remote lark stop' 停止")
+        print("\n使用 'agents-remote lark stop' 停止")
         return 1
 
     print("正在启动飞书客户端...")
@@ -521,8 +521,8 @@ def cmd_lark_start(args):
             print(f"✓ 飞书客户端已启动")
             print(f"  PID: {pid}")
             print(f"  日志: {log_file}")
-            print(f"\n使用 'agent-remote lark status' 查看状态")
-            print(f"使用 'agent-remote lark stop' 停止")
+            print(f"\n使用 'agents-remote lark status' 查看状态")
+            print(f"使用 'agents-remote lark stop' 停止")
             _start_watchdog()
             return 0
         else:
@@ -619,7 +619,7 @@ def cmd_lark_status(args):
     """显示飞书客户端状态"""
     if not is_lark_running():
         print("飞书客户端未运行")
-        print("\n使用 'agent-remote lark start' 启动")
+        print("\n使用 'agents-remote lark start' 启动")
         return 0
 
     status = get_lark_status()
@@ -686,7 +686,7 @@ def cmd_stats(args):
 
 
 def cmd_update(args):
-    """更新 agent-remote 到最新版本"""
+    """更新 agents-remote 到最新版本"""
     import subprocess as _sp
 
     git_dir = SCRIPT_DIR / ".git"
@@ -709,12 +709,12 @@ def cmd_update(args):
             project_root = SCRIPT_DIR.parent.parent
             print(f"检测到 npm 本地安装（{project_root}）")
             print("正在更新...")
-            result = _sp.run(["npm", "install", "agent-remote@latest"], cwd=project_root)
+            result = _sp.run(["npm", "install", "agents-remote@latest"], cwd=project_root)
         else:
             # 全局 npm 安装
             print("检测到 npm 全局安装")
             print("正在更新...")
-            result = _sp.run(["npm", "install", "-g", "agent-remote@latest"])
+            result = _sp.run(["npm", "install", "-g", "agents-remote@latest"])
         if result.returncode != 0:
             print("❌ npm 更新失败")
             return 1
@@ -881,7 +881,7 @@ def cmd_deps(args):
         rc_content = open(rc_file).read() if os.path.exists(rc_file) else ""
         if "$HOME/.local/bin" not in rc_content:
             with open(rc_file, "a") as f:
-                f.write(f"\n# agent-remote: tmux 路径\n{path_line}\n")
+                f.write(f"\n# agents-remote: tmux 路径\n{path_line}\n")
             print_ok(f"已将 $HOME/.local/bin 写入 {rc_file}")
     except Exception as e:
         print_warn(f"无法写入 {rc_file}: {e}")
@@ -922,17 +922,17 @@ def cmd_lark(args):
     else:
         print("飞书客户端未运行")
         print("\n可用命令:")
-        print("  agent-remote lark init     - 配置向导（首次使用）")
-        print("  agent-remote lark start    - 启动客户端")
-        print("  agent-remote lark stop     - 停止客户端")
-        print("  agent-remote lark restart  - 重启客户端")
-        print("  agent-remote lark status   - 查看状态")
+        print("  agents-remote lark init     - 配置向导（首次使用）")
+        print("  agents-remote lark start    - 启动客户端")
+        print("  agents-remote lark stop     - 停止客户端")
+        print("  agents-remote lark restart  - 重启客户端")
+        print("  agents-remote lark status   - 查看状态")
         return 0
 
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="agent-remote",
+        prog="agents-remote",
         description="Agent Remote - 双端共享 Claude CLI 工具",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
@@ -981,7 +981,7 @@ def main():
     parser.add_argument(
         "--version", "-V",
         action="version",
-        version=f"agent-remote v{_VERSION}",
+        version=f"agents-remote v{_VERSION}",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="命令")
@@ -1086,7 +1086,7 @@ def main():
     stats_parser.set_defaults(func=cmd_stats)
 
     # update 命令
-    update_parser = subparsers.add_parser("update", help="更新 agent-remote 到最新版本")
+    update_parser = subparsers.add_parser("update", help="更新 agents-remote 到最新版本")
     update_parser.set_defaults(func=cmd_update)
 
     # deps 命令

@@ -141,9 +141,9 @@ def request_app_registration(accounts_base: str = FEISHU_ACCOUNTS_URL) -> dict:
 
     # 追加 CLI 参数（与 lark-cli 行为一致）
     if verification_url and "?" not in verification_url:
-        verification_url = f"{verification_url}?from=agent-remote"
+        verification_url = f"{verification_url}?from=agents-remote"
     elif verification_url:
-        verification_url = f"{verification_url}&from=agent-remote"
+        verification_url = f"{verification_url}&from=agents-remote"
 
     return {
         "device_code": resp["device_code"],
@@ -769,7 +769,7 @@ def print_checklist(app_id: str):
 """)
 
     print(f"完成以上步骤后，运行以下命令验证配置：")
-    print(f"  {CYAN}agent-remote lark init --check{RESET}\n")
+    print(f"  {CYAN}agents-remote lark init --check{RESET}\n")
 
 
 # ── Check 模式 ─────────────────────────────────────────────────────────────
@@ -784,7 +784,7 @@ def run_check():
     # 检查 .env 文件
     if not env_path.exists():
         _err(f"配置文件不存在：{env_path}")
-        print(f"\n运行 {CYAN}agent-remote lark init{RESET} 开始配置")
+        print(f"\n运行 {CYAN}agents-remote lark init{RESET} 开始配置")
         return 1
 
     _ok(f"配置文件：{env_path}")
@@ -817,7 +817,7 @@ def run_check():
     if ws_ok:
         print(f" {GREEN}✓ 成功{RESET}")
         print(f"\n{GREEN}{BOLD}✅ 配置完整，飞书机器人已就绪！{RESET}")
-        print(f"\n现在可以启动：{CYAN}agent-remote lark start{RESET}\n")
+        print(f"\n现在可以启动：{CYAN}agents-remote lark start{RESET}\n")
     else:
         print(f" {YELLOW}⚠{RESET}")
         _warn(f"WebSocket 连接失败：{ws_msg}")
@@ -915,7 +915,7 @@ class SetupWizard:
                 _ok(f"已有配置：{masked_id} / {masked_secret}")
                 ans = _read_input(f"  是否重新配置？(y/N)", default="n")
                 if ans.lower() not in ("y", "yes"):
-                    print(f"\n保持现有配置。运行 {CYAN}agent-remote lark init --check{RESET} 可验证配置状态。\n")
+                    print(f"\n保持现有配置。运行 {CYAN}agents-remote lark init --check{RESET} 可验证配置状态。\n")
                     return 0
 
         # ── 阶段 1：获取凭证 ───────────────────────────────────────────────
@@ -988,7 +988,7 @@ class SetupWizard:
         _ok("配置全部完成！")
         if not new_mode:
             print(f"\n  运行以下命令验证配置：")
-            print(f"  {CYAN}agent-remote lark init --check{RESET}\n")
+            print(f"  {CYAN}agents-remote lark init --check{RESET}\n")
 
         return 0
 

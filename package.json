@@ -1,10 +1,11 @@
 {
   "name": "agents-remote",
-  "version": "1.0.9",
-  "description": "双端共享 Claude CLI 工具",
+  "version": "1.0.10",
+  "description": "双端共享 Claude / Codex CLI 工具",
   "bin": {
-    "agent-remote": "bin/agent-remote",
-    "agt": "bin/agent-remote",
+    "agents-remote": "bin/agents-remote",
+    "agent-remote": "bin/agents-remote",
+    "agt": "bin/agents-remote",
     "cla": "bin/cla",
     "cl": "bin/cl",
     "cx": "bin/cx",
@@ -38,11 +39,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/xluos/agent-remote.git"
+    "url": "git+https://github.com/xluos/agents-remote.git"
   },
-  "homepage": "https://github.com/xluos/agent-remote#readme",
+  "homepage": "https://github.com/xluos/agents-remote#readme",
   "bugs": {
-    "url": "https://github.com/xluos/agent-remote/issues"
+    "url": "https://github.com/xluos/agents-remote/issues"
   },
   "keywords": [
     "claude",

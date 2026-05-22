@@ -1,6 +1,6 @@
 [project]
 name = "agents-remote"
-version = "1.0.9"
+version = "1.0.10"
 description = "Agent Remote — share a Claude / Codex CLI session between local terminal and Feishu cards (formerly remote_claude)."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -15,6 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
+agents-remote = "agent_remote:main"
 agent-remote = "agent_remote:main"
 
 [build-system]

@@ -1,5 +1,5 @@
 #!/bin/bash
-# 发布 agent-remote 到 npm
+# 发布 agents-remote 到 npm
 # 用法：bash scripts/publish.sh [patch|minor|major] [--token <npm-token>]
 #       默认 patch（0.0.x）
 
@@ -59,4 +59,4 @@ git commit -m "chore: 发布 $NEW_VERSION"
 echo "📦 发布中..."
 npm publish --registry=https://registry.npmjs.org/
 
-echo "✅ agent-remote@$NEW_VERSION 发布成功"
+echo "✅ agents-remote@$NEW_VERSION 发布成功"

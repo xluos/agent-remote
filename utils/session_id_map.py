@@ -15,7 +15,7 @@
 只对 claude 注入 --session-id / --resume；codex 暂时没用这个机制（codex
 没有等价的 --resume API）。
 
-为什么放 utils/ 不放 lark_client/：这不是飞书的事，是 agent-remote 这个
+为什么放 utils/ 不放 lark_client/：这不是飞书的事，是 agents-remote 这个
 产品自己的"会话身份"管理，普通 cla 用户重启也要它来恢复对话。
 """
 

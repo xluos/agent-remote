@@ -164,7 +164,7 @@ def tmux_kill_session(session_name: str) -> bool:
 
 
 def tmux_list_sessions() -> List[str]:
-    """列出所有 agent-remote 相关的 tmux 会话"""
+    """列出所有 agents-remote 相关的 tmux 会话"""
     result = subprocess.run(
         ["tmux", "list-sessions", "-F", "#{session_name}"],
         capture_output=True,
