@@ -1,0 +1,52 @@
+name: Publish to npm
+
+# 触发方式：
+#   1) 推送形如 v1.2.3 的 tag（推荐：`npm version patch && git push --follow-tags`）
+#   2) 手动在 Actions 页面运行（workflow_dispatch）
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      # tag 触发时校验 tag 与 package.json 版本一致，避免发错版本
+      - name: Verify tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          echo "tag=$TAG  package.json=$PKG"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag v$TAG 与 package.json 版本 $PKG 不一致，请先对齐再发布"
+            exit 1
+          fi
+
+      # 若该版本已存在于 npm，则跳过（幂等，避免重复发布报错中断）
+      - name: Skip if version already published
+        id: check
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
+          if npm view "agent-remote@$PKG" version >/dev/null 2>&1; then
+            echo "already=true" >> "$GITHUB_OUTPUT"
+            echo "agent-remote@$PKG 已存在，跳过发布"
+          else
+            echo "already=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # --ignore-scripts：发布时不执行 pre/postinstall（那是给最终用户安装时跑的）
+      - name: Publish
+        if: steps.check.outputs.already == 'false'
+        run: npm publish --access public --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
