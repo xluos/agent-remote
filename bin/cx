@@ -10,9 +10,7 @@ while [ -L "$SOURCE" ]; do
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && cd .. && pwd)"
 
-if ! command -v uv &>/dev/null; then
-    [ -f "$HOME/.local/bin/uv" ] && export PATH="$HOME/.local/bin:$PATH"
-fi
+source "$SCRIPT_DIR/scripts/ensure-uv.sh"
 
 NAME=""
 ARGS=()

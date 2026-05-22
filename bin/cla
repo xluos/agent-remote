@@ -19,9 +19,7 @@ done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && cd .. && pwd)"
 
 # uv 路径兜底
-if ! command -v uv &>/dev/null; then
-    [ -f "$HOME/.local/bin/uv" ] && export PATH="$HOME/.local/bin:$PATH"
-fi
+source "$SCRIPT_DIR/scripts/ensure-uv.sh"
 
 # ── 参数解析 ────────────────────────────────────────────────────────────
 # Pass 1: 抽取 -n / --name（任意位置）

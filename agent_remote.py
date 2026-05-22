@@ -132,6 +132,41 @@ def _menu_lark():
     return fn(argparse.Namespace())
 
 
+def _runtime_install_hint(dep):
+    """返回 (依赖说明, [安装命令...])。"""
+    import platform
+    is_mac = platform.system() == "Darwin"
+    if dep == "tmux":
+        cmds = ["agent-remote deps        # 自动检测，按需源码编译 tmux 3.6a（无需 root）",
+                "brew install tmux" if is_mac else "sudo apt install tmux  # 或 yum/dnf install tmux"]
+        return ("tmux（server 在后台 tmux 会话里运行，需 >= 3.6）", cmds)
+    if dep == "claude":
+        return ("Claude CLI（被共享的主体）",
+                ["npm install -g @anthropic-ai/claude-code", "或见 https://claude.ai/code"])
+    if dep == "codex":
+        return ("Codex CLI（被共享的主体）",
+                ["npm install -g @openai/codex   # 或参考 Codex 官方安装方式"])
+    return (dep, [])
+
+
+def _require_runtime(cli_type):
+    """启动会话前检查硬依赖（tmux + 选定 CLI）；缺失则打印安装引导并返回 False。"""
+    import shutil
+    missing = [d for d in ("tmux", cli_type) if not shutil.which(d)]
+    if not missing:
+        return True
+    RED, YELLOW, RESET = "\033[31m", "\033[33m", "\033[0m"
+    print(f"\n{RED}无法启动会话：缺少运行时依赖{RESET}\n")
+    for dep in missing:
+        title, hints = _runtime_install_hint(dep)
+        print(f"  {RED}✗{RESET} {title}")
+        for h in hints:
+            print(f"      {h}")
+        print()
+    print(f"{YELLOW}提示：`agent-remote deps` 可一次性检查全部依赖并按需自动安装 tmux。{RESET}\n")
+    return False
+
+
 def cmd_start(args):
     """启动新会话；同名 daemon 已活则直接 attach（智能 attach）"""
     session_name = args.name
@@ -145,6 +180,11 @@ def cmd_start(args):
         from client.client import run_client
         run_client(session_name)
         return 0
+
+    # 运行时硬依赖预检（tmux + 选定 CLI）；缺失则给安装引导后退出
+    # 注意：必须在 tmux_session_exists() 之前，否则 tmux 缺失会直接 FileNotFoundError
+    if not _require_runtime(getattr(args, "cli", "claude")):
+        return 1
 
     # 检查 tmux 会话是否存在
     if tmux_session_exists(session_name):

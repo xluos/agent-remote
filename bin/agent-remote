@@ -9,9 +9,7 @@ done
 INSTALL_DIR="$(cd -P "$(dirname "$SOURCE")" && cd .. && pwd)"
 
 # uv 路径兜底
-if ! command -v uv &>/dev/null; then
-    [ -f "$HOME/.local/bin/uv" ] && export PATH="$HOME/.local/bin:$PATH"
-fi
+source "$INSTALL_DIR/scripts/ensure-uv.sh"
 
 # log 子命令：查看最后启动的 session 日志
 if [ "$1" = "log" ]; then
