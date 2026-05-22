@@ -111,6 +111,17 @@ agent-remote list               # 查看所有会话
 agent-remote kill <会话名>      # 终止会话
 ```
 
+### 终端快捷键
+
+连接到会话的终端 client 中：
+
+| 快捷键 | 说明 |
+|--------|------|
+| `Ctrl+Q` | detach：断开当前 client，server / claude / 飞书桥继续在后台运行，随时可用 `cla <会话名>` 重新连上 |
+| `Ctrl+D` | 同上（`Ctrl+D` 在 shell 里语义是 EOF，易误按，故另提供 `Ctrl+Q`）|
+
+> 这两个键只断开本地终端视图，**不会终止会话**；要彻底结束会话用 `agent-remote kill <会话名>`。
+
 ### 飞书客户端
 
 ```bash
