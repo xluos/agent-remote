@@ -12,6 +12,7 @@
 
 import asyncio
 import os
+import re
 import sys as _sys
 _sys.path.insert(0, str(__import__('pathlib').Path(__file__).parent.parent))  # 根目录 → protocol, utils
 import sys
@@ -33,10 +34,37 @@ except Exception:
     def _track_stats(*args, **kwargs): pass
 
 
-# 特殊按键 — 任何一个都会 detach client（server 不动）
-CTRL_D = b'\x04'  # Ctrl+D，传统快捷键
-CTRL_Q = b'\x11'  # Ctrl+Q，避免 Ctrl+D 跟 EOF 混淆时使用
+# 特殊按键 — 任何一个都会 detach client（server 不动，claude / 飞书桥继续活）
+#
+# 两种编码都要认：
+#   1) 传统控制字节：终端未进 kitty keyboard protocol 时，Ctrl+D=\x04 / Ctrl+Q=\x11
+#   2) kitty CSI-u：server 把 claude 的 PTY 原始流原样透传给终端（server.py
+#      _broadcast_output），claude 协商开启 kitty keyboard protocol 的序列会一并
+#      透传到本地真实终端，于是终端把 Ctrl+字母 编码成 ESC[<codepoint>;<modifiers>u
+#      （实测 Ghostty：Ctrl+Q => \x1b[113;5u，Ctrl+D => \x1b[100;5u）。
+#      这种形式下旧的字节相等判断永远不匹配，detach 会静默失效。
+CTRL_D = b'\x04'
+CTRL_Q = b'\x11'
 DETACH_KEYS = {CTRL_D, CTRL_Q}
+
+# kitty CSI-u：ESC [ <codepoint>[:sub] ; <modifiers>[:event] u
+# 'd'=100 / 'q'=113；modifiers 字段 = 1 + 位掩码，Ctrl 位 = 4（纯 Ctrl 即 5）
+_DETACH_CODEPOINTS = {100, 113}  # Ctrl+D / Ctrl+Q
+_KITTY_CSI_U_RE = re.compile(rb'^\x1b\[(\d+)(?::\d+)*(?:;(\d+)(?::\d+)*)?u$')
+
+
+def _is_detach_key(data: bytes) -> bool:
+    """判断一次输入是否是 detach 快捷键（兼容传统控制字节与 kitty CSI-u 编码）"""
+    if data in DETACH_KEYS:
+        return True
+    m = _KITTY_CSI_U_RE.match(data)
+    if not m:
+        return False
+    if int(m.group(1)) not in _DETACH_CODEPOINTS:
+        return False
+    modifiers = int(m.group(2)) if m.group(2) else 1
+    # modifiers 字段 = 1 + 位掩码；Ctrl 位 = 4
+    return bool((modifiers - 1) & 4)
 
 
 class RemoteClient:
@@ -235,8 +263,8 @@ class RemoteClient:
 
     async def _handle_input(self, data: bytes):
         """处理输入"""
-        # Ctrl+D 或 Ctrl+Q → detach（client 退出，server 继续活）
-        if data in DETACH_KEYS:
+        # Ctrl+D 或 Ctrl+Q → detach（client 退出，server / claude / 飞书桥继续活）
+        if _is_detach_key(data):
             self.running = False
             return
 
