@@ -1,5 +1,5 @@
 {
-  "name": "agent-remote",
+  "name": "agents-remote",
   "version": "1.0.9",
   "description": "双端共享 Claude CLI 工具",
   "bin": {
