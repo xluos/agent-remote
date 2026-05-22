@@ -5,9 +5,8 @@
 - Socket 连接
 - 输入转发
 - 输出显示
-- Ctrl+D 或 Ctrl+Q 退出（detach）
-  · 都只断开当前 client 的视图，server / claude / 飞书桥都继续活
-  · Ctrl+Q 在某些 CLI 场景下更安全（Ctrl+D 在 shell 里语义是 EOF，容易误按）
+- Ctrl+Q 退出（detach）：只断开当前 client 的视图，server / claude / 飞书桥都继续活
+  · Ctrl+D 不拦截，放行给 claude（其天然语义是退出 inner CLI / EOF）
 """
 
 import asyncio
@@ -34,22 +33,25 @@ except Exception:
     def _track_stats(*args, **kwargs): pass
 
 
-# 特殊按键 — 任何一个都会 detach client（server 不动，claude / 飞书桥继续活）
+# 特殊按键 — detach client（server / claude / 飞书桥继续活）
+#
+# 只用 Ctrl+Q 做 detach。Ctrl+D 不再拦截：它的天然语义是退出 inner CLI（claude
+# 的 EOF/exit），client 先于 claude 拦截输入，若把 Ctrl+D 也当 detach 截走，用户就
+# 没法用 Ctrl+D 退出 claude 了 —— 故放行给 claude。
 #
 # 两种编码都要认：
-#   1) 传统控制字节：终端未进 kitty keyboard protocol 时，Ctrl+D=\x04 / Ctrl+Q=\x11
+#   1) 传统控制字节：终端未进 kitty keyboard protocol 时，Ctrl+Q=\x11
 #   2) kitty CSI-u：server 把 claude 的 PTY 原始流原样透传给终端（server.py
 #      _broadcast_output），claude 协商开启 kitty keyboard protocol 的序列会一并
 #      透传到本地真实终端，于是终端把 Ctrl+字母 编码成 ESC[<codepoint>;<modifiers>u
-#      （实测 Ghostty：Ctrl+Q => \x1b[113;5u，Ctrl+D => \x1b[100;5u）。
+#      （实测 Ghostty：Ctrl+Q => \x1b[113;5u）。
 #      这种形式下旧的字节相等判断永远不匹配，detach 会静默失效。
-CTRL_D = b'\x04'
 CTRL_Q = b'\x11'
-DETACH_KEYS = {CTRL_D, CTRL_Q}
+DETACH_KEYS = {CTRL_Q}
 
 # kitty CSI-u：ESC [ <codepoint>[:sub] ; <modifiers>[:event] u
-# 'd'=100 / 'q'=113；modifiers 字段 = 1 + 位掩码，Ctrl 位 = 4（纯 Ctrl 即 5）
-_DETACH_CODEPOINTS = {100, 113}  # Ctrl+D / Ctrl+Q
+# 'q'=113；modifiers 字段 = 1 + 位掩码，Ctrl 位 = 4（纯 Ctrl 即 5）
+_DETACH_CODEPOINTS = {113}  # Ctrl+Q
 _KITTY_CSI_U_RE = re.compile(rb'^\x1b\[(\d+)(?::\d+)*(?:;(\d+)(?::\d+)*)?u$')
 
 
@@ -263,7 +265,7 @@ class RemoteClient:
 
     async def _handle_input(self, data: bytes):
         """处理输入"""
-        # Ctrl+D 或 Ctrl+Q → detach（client 退出，server / claude / 飞书桥继续活）
+        # Ctrl+Q → detach（client 退出，server / claude / 飞书桥继续活；Ctrl+D 放行给 claude）
         if _is_detach_key(data):
             self.running = False
             return

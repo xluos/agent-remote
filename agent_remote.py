@@ -817,8 +817,8 @@ def main():
   %(prog)s lark status               查看飞书客户端状态
 
 终端控制:
-  Ctrl+D       断开连接（client 退出，server / claude 继续活）
-  Ctrl+Q       同上 — Ctrl+D 跟 shell EOF 易混时改用这个
+  Ctrl+Q       断开连接（client 退出，server / claude 继续活）
+  Ctrl+D       放行给 claude（退出 inner CLI / EOF），不作 detach
 
 飞书命令:
   /attach <名称>   连接到会话
