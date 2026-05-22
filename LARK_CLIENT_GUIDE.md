@@ -7,7 +7,7 @@
 ### 启动飞书客户端
 
 ```bash
-python3 agent_remote.py lark start
+agent-remote lark start
 ```
 
 **输出示例：**
@@ -17,8 +17,8 @@ python3 agent_remote.py lark start
   PID: 12345
   日志: /path/to/lark_client.log
 
-使用 'python3 agent_remote.py lark status' 查看状态
-使用 'python3 agent_remote.py lark stop' 停止
+使用 'agent-remote lark status' 查看状态
+使用 'agent-remote lark stop' 停止
 ```
 
 **特性：**
@@ -29,7 +29,7 @@ python3 agent_remote.py lark start
 ### 查看运行状态
 
 ```bash
-python3 agent_remote.py lark status
+agent-remote lark status
 ```
 
 **输出示例：**
@@ -58,7 +58,7 @@ PID:      12345
 ### 停止飞书客户端
 
 ```bash
-python3 agent_remote.py lark stop
+agent-remote lark stop
 ```
 
 **输出示例：**
@@ -75,7 +75,7 @@ python3 agent_remote.py lark stop
 ### 重启飞书客户端
 
 ```bash
-python3 agent_remote.py lark restart
+agent-remote lark restart
 ```
 
 等同于先执行 `stop`，再执行 `start`。
@@ -152,7 +152,7 @@ cat .env
 cat lark_client.log
 
 # 2. 手动前台运行，查看错误
-python3 lark_client/main.py
+uv run python3 lark_client/main.py
 ```
 
 常见原因：
@@ -177,7 +177,7 @@ rm -f /tmp/agent-remote/lark.pid
 rm -f /tmp/agent-remote/lark.status
 
 # 4. 重新启动
-python3 agent_remote.py lark start
+agent-remote lark start
 ```
 
 ### 4. 日志文件过大
@@ -190,13 +190,13 @@ ls -lh lark_client.log
 **归档旧日志：**
 ```bash
 # 1. 停止客户端
-python3 agent_remote.py lark stop
+agent-remote lark stop
 
 # 2. 归档日志
 mv lark_client.log lark_client.log.$(date +%Y%m%d_%H%M%S)
 
 # 3. 重新启动
-python3 agent_remote.py lark start
+agent-remote lark start
 ```
 
 **或使用 logrotate（推荐）：**
@@ -226,7 +226,7 @@ cat /tmp/agent-remote/lark.pid
 kill -9 <PID>
 
 # 清理文件
-python3 agent_remote.py lark stop
+agent-remote lark stop
 ```
 
 ## 🔄 开机自启动（可选）
@@ -310,9 +310,9 @@ sudo systemctl status agent-remote-lark
 #!/bin/bash
 
 while true; do
-    if ! python3 agent_remote.py lark status > /dev/null 2>&1; then
+    if ! agent-remote lark status > /dev/null 2>&1; then
         echo "[$(date)] 飞书客户端未运行，正在重启..." | tee -a monitor.log
-        python3 agent_remote.py lark start
+        agent-remote lark start
     fi
     sleep 60
 done
@@ -348,7 +348,7 @@ def health():
 在启动时设置环境变量：
 
 ```bash
-LARK_LOG_FILE=/custom/path/lark.log python3 agent_remote.py lark start
+LARK_LOG_FILE=/custom/path/lark.log agent-remote lark start
 ```
 
 （需要在代码中支持此环境变量，当前未实现）
