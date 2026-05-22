@@ -38,7 +38,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yyzybb537/agent_remote.git"
+    "url": "git+https://github.com/xluos/agent-remote.git"
+  },
+  "homepage": "https://github.com/xluos/agent-remote#readme",
+  "bugs": {
+    "url": "https://github.com/xluos/agent-remote/issues"
   },
   "keywords": [
     "claude",

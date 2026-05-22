@@ -47,8 +47,8 @@ npm install agent-remote
 #### 1.2 或 源码安装
 
 ```bash
-git clone https://github.com/yyzybb537/agent_remote.git
-cd agent_remote
+git clone https://github.com/xluos/agent-remote.git
+cd agent-remote
 ./init.sh
 ```
 

@@ -21,7 +21,7 @@ if [ "$ENV_OK" = false ]; then
     echo "飞书客户端尚未配置，需要填写应用凭证。"
     echo "（在飞书开发者后台创建应用获取: https://open.feishu.cn/app）"
     echo ""
-    echo -e "\033[33m飞书机器人配置文档参考：https://github.com/yyzybb537/agent_remote\033[0m"
+    echo -e "\033[33m飞书机器人配置文档参考：https://github.com/xluos/agent-remote\033[0m"
     echo ""
     read -p "FEISHU_APP_ID: " INPUT_APP_ID
     read -p "FEISHU_APP_SECRET: " INPUT_APP_SECRET
