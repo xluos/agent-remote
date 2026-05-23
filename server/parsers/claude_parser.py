@@ -403,6 +403,8 @@ class ClaudeParser(BaseParser):
         # 星号滑动窗口（1秒）：记录每行最近 1 秒内出现的 (timestamp, char)，
         # 窗口内 ≥2 种不同字符 → spinner 旋转 → StatusLine；始终只有 1 种字符 → SystemBlock
         self._star_row_history: Dict[int, deque] = {}
+        # StatusLine 行号时间戳：防止 StatusLine/SystemBlock 在帧间翻转导致内容重复
+        self._status_row_ts: Dict[int, float] = {}
         # 最近一次解析到的输入区 ❯ 文本（用于 MessageQueue 追踪变更）
         self.last_input_text: str = ''
         self.last_input_ansi_text: str = ''
@@ -450,6 +452,7 @@ class ClaudeParser(BaseParser):
         if self.last_layout_mode != prev_mode:
             self._dot_row_cache.clear()
             self._star_row_history.clear()
+            self._status_row_ts.clear()
 
         # 提取输入区 ❯ 文本（用于 MessageQueue 追踪变更）
         self.last_input_text = self._extract_input_area_text(screen, input_rows)
@@ -602,6 +605,9 @@ class ClaudeParser(BaseParser):
             if row not in output_row_set:
                 deleted_rows.append((row, "not_in_output"))
                 del self._star_row_history[row]
+        for row in list(self._status_row_ts.keys()):
+            if row not in output_row_set:
+                del self._status_row_ts[row]
         # 诊断日志：记录删除行为
         if deleted_rows:
             logger.debug(f"[diag-cleanup] deleted={deleted_rows} remaining={list(self._star_row_history.keys())}")
@@ -713,7 +719,15 @@ class ClaudeParser(BaseParser):
             logger.debug(f"[diag-star] row={first_row} col0={col0!r} is_blink={is_blink} history_len={len(history)} unique_chars={len(unique_chars)} chars={sorted(unique_chars)!r}")
             # 窗口内 ≥2 种不同字符 → spinner 旋转 → StatusLine
             inferred_blink = is_blink or len(unique_chars) > 1
+            # 防翻转：若此行最近 3 秒内曾被判定为 StatusLine，保持 StatusLine
+            # 避免 flush 间隔内 unique_chars 偶尔 ==1 导致误判为 SystemBlock（内容重复）
+            if not inferred_blink:
+                last_status_ts = self._status_row_ts.get(first_row, 0)
+                if now - last_status_ts < 3.0:
+                    inferred_blink = True
+                    logger.debug(f"[diag-star] -> StatusLine (anti-flip, last={now - last_status_ts:.1f}s ago)")
             if inferred_blink:
+                self._status_row_ts[first_row] = now
                 logger.debug(f"[diag-star] -> StatusLine")
                 return self._parse_status_block(
                     lines[0],
