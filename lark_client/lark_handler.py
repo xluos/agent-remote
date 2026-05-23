@@ -387,12 +387,9 @@ class LarkHandler:
             work_dir = str(work_path.absolute())
 
         sessions = list_active_sessions()
-        if any(s["name"] == session_name for s in sessions):
-            await card_service.send_text(
-                chat_id,
-                f"错误: 会话 '{session_name}' 已存在\n使用 /attach {session_name} 连接"
-            )
-            return
+        active_names = {s["name"] for s in sessions}
+        if session_name in active_names or session_name in self._starting_sessions:
+            session_name = f"{session_name}_{_datetime.now().strftime('%m%d_%H%M%S')}"
 
         if session_name in self._starting_sessions:
             await card_service.send_text(chat_id, f"会话 '{session_name}' 正在启动中，请稍候")
