@@ -707,7 +707,8 @@ class LarkHandler:
         card = build_menu_card(sessions, current_session=current, session_groups=session_groups, page=page,
                                notify_enabled=self._poller.get_notify_enabled(),
                                urgent_enabled=self._poller.get_urgent_enabled(),
-                               bypass_enabled=self._poller.get_bypass_enabled())
+                               bypass_enabled=self._poller.get_bypass_enabled(),
+                               simple_enabled=self._poller.get_simple_mode())
         await self._send_or_update_card(chat_id, card, message_id)
 
     async def _cmd_toggle_notify(self, user_id: str, chat_id: str,
@@ -731,9 +732,18 @@ class LarkHandler:
         self._poller.set_bypass_enabled(new_value)
         await self._cmd_menu(user_id, chat_id, message_id=message_id)
 
+    async def _cmd_toggle_simple(self, user_id: str, chat_id: str,
+                                  message_id: Optional[str] = None):
+        """切换简单模式开关并刷新菜单卡片"""
+        new_value = not self._poller.get_simple_mode()
+        self._poller.set_simple_mode(new_value)
+        await self._cmd_menu(user_id, chat_id, message_id=message_id)
+
     async def _cmd_ls(self, user_id: str, chat_id: str, args: str,
                        tree: bool = False, message_id: Optional[str] = None, page: int = 0):
         """查看目录文件结构"""
+        from .config import DIR_FAVORITES
+
         all_sessions = list_active_sessions()
         sessions_info = []
         for s in all_sessions:
@@ -741,7 +751,33 @@ class LarkHandler:
             cwd = self._get_pid_cwd(pid) if pid else None
             sessions_info.append({"name": s["name"], "cwd": cwd or ""})
 
+        session_groups = {
+            self._chat_bindings[cid]: cid
+            for cid in self._group_chat_ids
+            if cid in self._chat_bindings
+        }
+
         bound_session = self._chat_sessions.get(chat_id)
+        target_arg = args.strip()
+
+        # 无参数 + 无绑定会话 + 有收藏夹 → 展示收藏目录入口
+        if not target_arg and not bound_session and DIR_FAVORITES:
+            entries = []
+            for fav_path in DIR_FAVORITES:
+                p = Path(fav_path)
+                if p.is_dir():
+                    entries.append({
+                        "name": p.name,
+                        "full_path": str(p),
+                        "is_dir": True,
+                        "depth": 0,
+                    })
+            card = build_dir_card("⭐ 收藏夹", entries, sessions_info,
+                                  tree=False, session_groups=session_groups, page=page,
+                                  favorites=True)
+            await self._send_or_update_card(chat_id, card, message_id)
+            return
+
         if bound_session:
             pid = next((s.get("pid") for s in all_sessions if s["name"] == bound_session), None)
             session_cwd = self._get_pid_cwd(pid) if pid else None
@@ -749,7 +785,6 @@ class LarkHandler:
         else:
             root = Path.home()
 
-        target_arg = args.strip()
         if target_arg:
             target = Path(target_arg).expanduser()
             if not target.is_absolute():
@@ -771,11 +806,6 @@ class LarkHandler:
             await card_service.send_text(chat_id, f"读取目录失败：{e}")
             return
 
-        session_groups = {
-            self._chat_bindings[cid]: cid
-            for cid in self._group_chat_ids
-            if cid in self._chat_bindings
-        }
         card = build_dir_card(target, entries, sessions_info, tree=tree, session_groups=session_groups, page=page)
         await self._send_or_update_card(chat_id, card, message_id)
 

@@ -69,6 +69,9 @@ class StreamTracker:
     prev_is_ready: bool = True     # 上一帧是否就绪（初始 True 避免首次误触发）
     notify_user_id: Optional[str] = None  # 就绪通知 @ 的用户 open_id
     last_notify_message_id: Optional[str] = None  # 上一条就绪通知的 message_id（用于后续加急复用）
+    # 简单模式（每轮一张独立卡片）：本轮起始 block 索引 + 触发本轮的 UserInput block_id
+    simple_round_start: int = 0
+    simple_last_user_bid: Optional[str] = None
 
 
 # ── 轮询器 ────────────────────────────────────────────────────────────────────
@@ -253,6 +256,14 @@ class SharedMemoryPoller:
         has_valid_snapshot: bool = False,
     ) -> None:
         """卡片操作主体：获取活跃卡片 → 创建/更新/拆分"""
+        # 简单模式：走独立的"每轮一张卡片"渲染路径
+        if _simple_mode_enabled:
+            await self._do_card_update_simple(
+                tracker, blocks, status_line, bottom_bar, agent_panel,
+                option_block, cli_type, has_valid_snapshot=has_valid_snapshot,
+            )
+            return
+
         # 获取活跃卡片（最后一张且未冻结）
         active = None
         if tracker.cards and not tracker.cards[-1].frozen:
@@ -339,6 +350,147 @@ class SharedMemoryPoller:
         logger.debug(
             f"[UPDATE] session={tracker.session_name} blocks={len(blocks_slice)} "
             f"seq={active.sequence} hash={new_hash[:8]}"
+        )
+
+    async def _do_card_update_simple(
+        self, tracker: StreamTracker, blocks: List[dict],
+        status_line: Optional[dict], bottom_bar: Optional[dict],
+        agent_panel: Optional[dict], option_block: Optional[dict],
+        cli_type: str,
+        has_valid_snapshot: bool = False,
+    ) -> None:
+        """简单模式卡片更新：每轮一张独立卡片
+
+        - 以最后一个 UserInput 为本轮起点；出现新的 UserInput → 冻结上一张卡、开新卡
+        - 执行中（非就绪）：只渲染状态卡（status_only，内容区折叠）
+        - 就绪：展开本轮全部 blocks 作为结果卡
+        - 需要交互（option_block）时：ready 通常为 True → 自动展开并显示选项按钮
+        """
+        from .card_builder import build_stream_card
+
+        if not blocks and not status_line and not option_block and not has_valid_snapshot:
+            return
+
+        ready = _is_ready(blocks, status_line, option_block, agent_panel)
+
+        # 找本轮起点（最后一个 UserInput），无则本轮从 0 开始
+        round_start = 0
+        user_bid: Optional[str] = None
+        for i in range(len(blocks) - 1, -1, -1):
+            if blocks[i].get("_type") == "UserInput":
+                round_start = i
+                user_bid = blocks[i].get("block_id") or f"idx{i}"
+                break
+
+        active = tracker.cards[-1] if tracker.cards else None
+
+        # 新一轮检测：出现新的 UserInput → 冻结旧卡 + 开新卡
+        if user_bid != tracker.simple_last_user_bid:
+            if active is not None and not active.frozen:
+                old_blocks = blocks[active.start_idx:round_start]
+                frozen_card = build_stream_card(
+                    old_blocks, is_frozen=True,
+                    session_name=tracker.session_name, cli_type=cli_type,
+                )
+                active.sequence += 1
+                try:
+                    await self._card_service.update_card(active.card_id, active.sequence, frozen_card)
+                    active.frozen = True
+                    _track_stats('card', 'freeze', session_name=tracker.session_name,
+                                 chat_id=tracker.chat_id)
+                except Exception as e:
+                    logger.warning(f"[simple] 冻结旧卡失败: {e}")
+            tracker.simple_last_user_bid = user_bid
+            tracker.simple_round_start = round_start
+            tracker.content_hash = ""
+            active = None  # 强制开新卡
+
+        # blocks 骤降保护（compact/重启导致 blocks 从头累积）
+        if tracker.simple_round_start > len(blocks):
+            logger.warning(
+                f"[simple] blocks regression: round_start={tracker.simple_round_start} "
+                f"> len(blocks)={len(blocks)}, reset (session={tracker.session_name})"
+            )
+            tracker.simple_round_start = round_start
+            tracker.content_hash = ""
+            active = None
+
+        blocks_slice = blocks[tracker.simple_round_start:]
+        status_only = not ready
+
+        card_dict = build_stream_card(
+            blocks_slice, status_line, bottom_bar,
+            agent_panel=agent_panel, option_block=option_block,
+            session_name=tracker.session_name, cli_type=cli_type,
+            status_only=status_only,
+        )
+
+        # 结果卡（展开内容）可能超限：从头裁剪本轮 blocks
+        start_idx = tracker.simple_round_start
+        if not status_only:
+            card_size = len(json.dumps(card_dict, ensure_ascii=False).encode('utf-8'))
+            while card_size > CARD_SIZE_LIMIT and len(blocks_slice) > 1:
+                blocks_slice = blocks_slice[1:]
+                start_idx += 1
+                card_dict = build_stream_card(
+                    blocks_slice, status_line, bottom_bar,
+                    agent_panel=agent_panel, option_block=option_block,
+                    session_name=tracker.session_name, cli_type=cli_type,
+                    status_only=status_only,
+                )
+                card_size = len(json.dumps(card_dict, ensure_ascii=False).encode('utf-8'))
+
+        # hash diff：status_only 时用 streaming 布尔代替 blocks 内容，避免执行中频繁无效刷新
+        if status_only:
+            has_streaming = any(b.get("is_streaming", False) for b in blocks_slice)
+            hash_blocks = [{"streaming": has_streaming}]
+        else:
+            hash_blocks = blocks_slice
+        new_hash = self._compute_hash(hash_blocks, status_line, bottom_bar, agent_panel, option_block)
+        new_hash += ":s" if status_only else ":f"
+
+        if active is None:
+            # 创建本轮新卡
+            card_id = await self._card_service.create_card(card_dict)
+            if card_id:
+                await self._card_service.send_card(tracker.chat_id, card_id)
+                tracker.cards.append(CardSlice(card_id=card_id, start_idx=start_idx))
+                tracker.content_hash = new_hash
+                _track_stats('card', 'create', session_name=tracker.session_name,
+                             chat_id=tracker.chat_id)
+                logger.info(
+                    f"[simple NEW] session={tracker.session_name} start_idx={start_idx} "
+                    f"status_only={status_only} card_id={card_id}"
+                )
+            else:
+                logger.warning(f"[simple] create_card 失败 session={tracker.session_name}")
+            return
+
+        # 更新本轮卡片
+        if new_hash == tracker.content_hash:
+            return
+
+        active.start_idx = start_idx
+        active.sequence += 1
+        success = await self._card_service.update_card(
+            card_id=active.card_id, sequence=active.sequence, card_content=card_dict,
+        )
+        if not success:
+            logger.warning(f"[simple] update_card 失败 card_id={active.card_id}，降级新卡")
+            _track_stats('card', 'fallback', session_name=tracker.session_name,
+                         chat_id=tracker.chat_id)
+            new_card_id = await self._card_service.create_card(card_dict)
+            if new_card_id:
+                await self._card_service.send_card(tracker.chat_id, new_card_id)
+                active.card_id = new_card_id
+                active.sequence = 0
+        else:
+            _track_stats('card', 'update', session_name=tracker.session_name,
+                         chat_id=tracker.chat_id)
+        tracker.content_hash = new_hash
+        logger.debug(
+            f"[simple UPDATE] session={tracker.session_name} blocks={len(blocks_slice)} "
+            f"status_only={status_only} seq={active.sequence} hash={new_hash[:8]}"
         )
 
     async def _create_new_card(
@@ -602,6 +754,17 @@ class SharedMemoryPoller:
         _save_bypass_enabled(enabled)
         logger.info(f"新会话 bypass 开关已{'开启' if enabled else '关闭'}")
 
+    def get_simple_mode(self) -> bool:
+        """获取简单模式开关状态"""
+        return _simple_mode_enabled
+
+    def set_simple_mode(self, enabled: bool) -> None:
+        """更新简单模式开关状态并持久化"""
+        global _simple_mode_enabled
+        _simple_mode_enabled = enabled
+        _save_simple_mode(enabled)
+        logger.info(f"简单模式开关已{'开启' if enabled else '关闭'}")
+
     @staticmethod
     def _compute_hash(
         blocks: list, status_line: Optional[dict],
@@ -634,6 +797,7 @@ _READY_COUNT_FILE = USER_DATA_DIR / "ready_notify_count"
 _NOTIFY_ENABLED_FILE = USER_DATA_DIR / "ready_notify_enabled"
 _URGENT_ENABLED_FILE = USER_DATA_DIR / "urgent_notify_enabled"
 _BYPASS_ENABLED_FILE = USER_DATA_DIR / "bypass_enabled"
+_SIMPLE_MODE_FILE = USER_DATA_DIR / "simple_mode_enabled"
 
 
 def _load_notify_enabled() -> bool:
@@ -687,10 +851,28 @@ def _save_bypass_enabled(enabled: bool) -> None:
         logger.warning(f"_save_bypass_enabled 失败: {e}")
 
 
+def _load_simple_mode() -> bool:
+    """读取简单模式开关状态，不存在或解析失败返回 False（默认关闭）"""
+    try:
+        return _SIMPLE_MODE_FILE.read_text().strip() == "1"
+    except Exception:
+        return False
+
+
+def _save_simple_mode(enabled: bool) -> None:
+    """持久化简单模式开关状态"""
+    try:
+        ensure_user_data_dir()
+        _SIMPLE_MODE_FILE.write_text("1" if enabled else "0")
+    except Exception as e:
+        logger.warning(f"_save_simple_mode 失败: {e}")
+
+
 # 模块级开关状态：启动时加载一次
 _notify_enabled: bool = _load_notify_enabled()
 _urgent_enabled: bool = _load_urgent_enabled()
 _bypass_enabled: bool = _load_bypass_enabled()
+_simple_mode_enabled: bool = _load_simple_mode()
 
 
 def _increment_ready_count() -> int:

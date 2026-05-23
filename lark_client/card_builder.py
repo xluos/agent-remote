@@ -647,6 +647,7 @@ def build_stream_card(
     session_name: Optional[str] = None,
     disconnected: bool = False,
     cli_type: str = "claude",
+    status_only: bool = False,
 ) -> Dict[str, Any]:
     """从共享内存 blocks 流构建飞书卡片
 
@@ -655,6 +656,10 @@ def build_stream_card(
     2. 状态区：status_line + bottom_bar + agent_panel + option_block 问题文本（断开时隐藏）
     3. 交互区：option_block 的选项按钮（断开时隐藏）
     4. 菜单按钮（断开时变为 [⚡菜单] [🔗重新连接]）
+
+    status_only=True（简单模式执行中）：跳过第一层内容区渲染，只保留
+    header（仍用 blocks 判断 streaming/就绪）+ 状态区 + 交互区 + 菜单，
+    用于"过程折叠、就绪展开"的简单模式状态卡。
     """
     title, template = _determine_header(
         blocks, status_line, bottom_bar, is_frozen,
@@ -662,22 +667,23 @@ def build_stream_card(
         cli_type=cli_type,
     )
 
-    # === 第一层：内容区 ===
+    # === 第一层：内容区（status_only 时折叠，不渲染累积 blocks）===
     elements = []
     has_content = False
 
-    for block_dict in blocks:
-        typ = block_dict.get("_type", "")
-        if typ == "PlanBlock":
-            plan_el = _render_plan_block(block_dict)
-            if plan_el:
+    if not status_only:
+        for block_dict in blocks:
+            typ = block_dict.get("_type", "")
+            if typ == "PlanBlock":
+                plan_el = _render_plan_block(block_dict)
+                if plan_el:
+                    has_content = True
+                    elements.append(plan_el)
+                continue
+            rendered = _render_block_colored(block_dict)
+            if rendered:
                 has_content = True
-                elements.append(plan_el)
-            continue
-        rendered = _render_block_colored(block_dict)
-        if rendered:
-            has_content = True
-            elements.append({"tag": "markdown", "content": rendered})
+                elements.append({"tag": "markdown", "content": rendered})
 
 
     # === 第二层：状态区（仅非冻结且非断开时，column_set 灰色背景）===
@@ -973,7 +979,7 @@ def _dir_session_name(path: str) -> str:
     return name or "session"
 
 
-def build_dir_card(target, entries: List[Dict], sessions: List[Dict], tree: bool = False, session_groups: Optional[Dict[str, str]] = None, page: int = 0) -> Dict[str, Any]:
+def build_dir_card(target, entries: List[Dict], sessions: List[Dict], tree: bool = False, session_groups: Optional[Dict[str, str]] = None, page: int = 0, favorites: bool = False) -> Dict[str, Any]:
     """构建目录浏览卡片
 
     顶层目录（depth==0）带两个操作按钮：
@@ -982,31 +988,33 @@ def build_dir_card(target, entries: List[Dict], sessions: List[Dict], tree: bool
 
     entries 格式: [{"name": str, "full_path": str, "is_dir": bool, "depth": int}]
     sessions 格式: [{"name": str, "cwd": str}]（仅用于信息展示，不影响按钮可用性）
+    favorites: True 时为收藏夹模式，不显示返回上级按钮
     """
     import os
-    title = f"🌲 {target}" if tree else f"📂 {target}"
+    title = str(target) if favorites else (f"🌲 {target}" if tree else f"📂 {target}")
     elements = []
 
     target_str = str(target).rstrip("/") or "/"
-    parent_path = os.path.dirname(target_str)
-    if parent_path and parent_path != target_str:
-        elements.append({
-            "tag": "column_set",
-            "flex_mode": "none",
-            "columns": [{
-                "tag": "column",
-                "width": "auto",
-                "elements": [{
-                    "tag": "button",
-                    "text": {"tag": "plain_text", "content": "⬆️ 返回上级"},
-                    "type": "default",
-                    "behaviors": [{"type": "callback", "value": {
-                        "action": "dir_browse", "path": parent_path
-                    }}]
+    if not favorites:
+        parent_path = os.path.dirname(target_str)
+        if parent_path and parent_path != target_str:
+            elements.append({
+                "tag": "column_set",
+                "flex_mode": "none",
+                "columns": [{
+                    "tag": "column",
+                    "width": "auto",
+                    "elements": [{
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "⬆️ 返回上级"},
+                        "type": "default",
+                        "behaviors": [{"type": "callback", "value": {
+                            "action": "dir_browse", "path": parent_path
+                        }}]
+                    }]
                 }]
-            }]
-        })
-        elements.append({"tag": "hr"})
+            })
+            elements.append({"tag": "hr"})
 
     PER_PAGE = 12
     total = len(entries)
@@ -1020,6 +1028,7 @@ def build_dir_card(target, entries: List[Dict], sessions: List[Dict], tree: bool
         page = max(0, min(page, total_pages - 1))
         shown = entries[page * PER_PAGE : (page + 1) * PER_PAGE]
 
+    home_str = str(Path.home())
     for entry in shown:
         name = entry["name"]
         is_dir = entry["is_dir"]
@@ -1027,6 +1036,7 @@ def build_dir_card(target, entries: List[Dict], sessions: List[Dict], tree: bool
         full_path = entry.get("full_path", "")
         indent = "　" * depth
         icon = "📁" if is_dir else "📄"
+        display_name = full_path.replace(home_str, "~", 1) if favorites and full_path else name
 
         if is_dir and depth == 0:
             auto_session = _dir_session_name(full_path)
@@ -1230,7 +1240,7 @@ def build_session_closed_card(session_name: str) -> Dict[str, Any]:
 def build_menu_card(sessions: List[Dict], current_session: Optional[str] = None,
                     session_groups: Optional[Dict[str, str]] = None, page: int = 0,
                     notify_enabled: bool = True, urgent_enabled: bool = False,
-                    bypass_enabled: bool = False) -> Dict[str, Any]:
+                    bypass_enabled: bool = False, simple_enabled: bool = False) -> Dict[str, Any]:
     """构建快捷操作菜单卡片（/menu 和 /list 共用）：内嵌会话列表 + 快捷操作"""
     elements = []
 
@@ -1330,11 +1340,34 @@ def build_menu_card(sessions: List[Dict], current_session: Optional[str] = None,
     })
 
     bypass_label = "🔓 新会话bypass: 开" if bypass_enabled else "🔒 新会话bypass: 关"
+    simple_label = "📊 简洁模式: 开" if simple_enabled else "📃 简洁模式: 关"
     elements.append({
-        "tag": "button",
-        "text": {"tag": "plain_text", "content": bypass_label},
-        "type": "default",
-        "behaviors": [{"type": "callback", "value": {"action": "menu_toggle_bypass"}}]
+        "tag": "column_set",
+        "flex_mode": "none",
+        "columns": [
+            {
+                "tag": "column",
+                "width": "weighted",
+                "weight": 1,
+                "elements": [{
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": bypass_label},
+                    "type": "default",
+                    "behaviors": [{"type": "callback", "value": {"action": "menu_toggle_bypass"}}]
+                }]
+            },
+            {
+                "tag": "column",
+                "width": "weighted",
+                "weight": 1,
+                "elements": [{
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": simple_label},
+                    "type": "default",
+                    "behaviors": [{"type": "callback", "value": {"action": "menu_toggle_simple"}}]
+                }]
+            },
+        ]
     })
 
     return {
