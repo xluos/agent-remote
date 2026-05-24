@@ -382,10 +382,8 @@ def _build_menu_button_row(session_name: Optional[str] = None, disconnected: boo
         ("↓", {"action": "send_key", "key": "down"}),
         ("←", {"action": "send_key", "key": "left"}),
         ("→", {"action": "send_key", "key": "right"}),
-        ("Ctrl+O", {"action": "send_key", "key": "ctrl_o"}),
         ("Shift+Tab", {"action": "send_key", "key": "shift_tab"}),
         ("ESC", {"action": "send_key", "key": "esc"}),
-        ("(↹)×3", {"action": "send_key", "key": "shift_tab", "times": 3}),
     ]
 
     def _make_key_column(label, value):
