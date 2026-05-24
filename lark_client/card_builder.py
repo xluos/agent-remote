@@ -104,6 +104,38 @@ def _256_to_lark(n: int) -> str:
 
 
 _TOOL_IND_RGB_RE = _re.compile(r'\x1b\[38;2;(\d+);(\d+);(\d+)')
+_TOOL_SUMMARY_RE = _re.compile(
+    r'^(Bash|Read|Write|Update|Edit|Search(?:ed|ing)?|TodoRead|Task|Agent|Listing|WebFetch|WebSearch)'
+    r'(?:\(([^)]*)\))?'
+)
+_TOOL_ICONS = {"Bash": "🔧", "Read": "📄", "Write": "📄",
+               "Update": "📝", "Edit": "📝", "Agent": "🤖",
+               "Searching": "🔍", "Searched": "🔍", "Search": "🔍",
+               "Listing": "📂", "WebFetch": "🌐", "WebSearch": "🔍"}
+
+
+def _tool_summary_line(block_dict: dict) -> str:
+    """从工具调用 OutputBlock 提取一行摘要标题"""
+    content = block_dict.get("content", "")
+    first_line = content.split('\n', 1)[0].strip()
+    if not first_line:
+        return "🔧 ..."
+    m = _TOOL_SUMMARY_RE.match(first_line)
+    if m:
+        tool = m.group(1)
+        arg = (m.group(2) or "").strip()
+        icon = _TOOL_ICONS.get(tool, "🔧")
+        if tool == "Bash" and arg:
+            return f"{icon} Bash: {arg[:50]}"
+        if arg:
+            return f"{icon} {tool}: {arg}"
+        rest = first_line[m.end():].strip()
+        if rest:
+            return f"{icon} {tool} {rest[:50]}"
+        return f"{icon} {tool}"
+    return f"🔧 {first_line[:60]}"
+
+
 def _is_tool_indicator(ansi_indicator: str) -> bool:
     """OutputBlock 指示符颜色是否为工具调用（绿色）"""
     if not ansi_indicator:
@@ -696,9 +728,20 @@ def build_stream_card(
                 has_content = True
                 elements.append({"tag": "markdown", "content": rendered})
     else:
+        pending_tools: list[str] = []
+
+        def _flush_tools():
+            nonlocal has_content
+            if not pending_tools:
+                return
+            has_content = True
+            elements.append({"tag": "markdown", "content": "\n".join(pending_tools)})
+            pending_tools.clear()
+
         for block_dict in blocks:
             typ = block_dict.get("_type", "")
             if typ == "PlanBlock":
+                _flush_tools()
                 plan_el = _render_plan_block(block_dict)
                 if plan_el:
                     has_content = True
@@ -706,11 +749,14 @@ def build_stream_card(
                 continue
             if (skip_tools and typ == "OutputBlock"
                     and _is_tool_indicator(block_dict.get("ansi_indicator", ""))):
+                pending_tools.append(_tool_summary_line(block_dict))
                 continue
+            _flush_tools()
             rendered = _render_block_colored(block_dict)
             if rendered:
                 has_content = True
                 elements.append({"tag": "markdown", "content": rendered})
+        _flush_tools()
 
 
     # === 第二层：状态区（仅非冻结且非断开时，column_set 灰色背景）===
