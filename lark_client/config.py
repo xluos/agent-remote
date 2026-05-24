@@ -52,3 +52,13 @@ LARK_LOG_LEVEL = {
 # SOCKS 代理兼容（可选，默认 False）
 # 系统有 SOCKS 代理但飞书可直连时，设为 1 绕过代理
 LARK_NO_PROXY = os.getenv("LARK_NO_PROXY", "").strip() in ("1", "true", "yes")
+
+# 目录收藏夹（可选，逗号分隔的路径列表）
+# 设置后 /ls 无参数时展示这些目录作为入口，而非列出主目录全部内容
+# 支持 ~ 展开，不存在的路径自动跳过
+_dir_favorites_raw = os.getenv("DIR_FAVORITES", "").strip()
+DIR_FAVORITES = [
+    str(Path(p.strip()).expanduser().resolve())
+    for p in _dir_favorites_raw.split(",")
+    if p.strip() and Path(p.strip()).expanduser().resolve().is_dir()
+] if _dir_favorites_raw else []

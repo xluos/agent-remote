@@ -1318,6 +1318,8 @@ class LarkHandler:
         KEY_MAP = {
             "up": b"\x1b[A",         # ↑ 上箭头
             "down": b"\x1b[B",       # ↓ 下箭头
+            "left": b"\x1b[D",       # ← 左箭头
+            "right": b"\x1b[C",      # → 右箭头
             "enter": b"\r",          # Enter
             "ctrl_o": b"\x0f",       # Ctrl+O
             "shift_tab": b"\x1b[Z",  # Shift+Tab

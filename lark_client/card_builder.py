@@ -103,6 +103,79 @@ def _256_to_lark(n: int) -> str:
     return 'grey'
 
 
+_TOOL_IND_RGB_RE = _re.compile(r'\x1b\[38;2;(\d+);(\d+);(\d+)')
+_TOOL_SUMMARY_RE = _re.compile(
+    r'^(Bash|Read|Write|Update|Edit|Search(?:ed|ing)?|TodoRead|Task|Agent|Listing|WebFetch|WebSearch)'
+    r'(?:\(([^)]*)\))?'
+)
+
+
+def _is_tool_indicator(ansi_indicator: str) -> bool:
+    """OutputBlock 指示符颜色是否为工具调用（绿色）"""
+    if not ansi_indicator:
+        return False
+    m = _TOOL_IND_RGB_RE.search(ansi_indicator)
+    if m:
+        r, g, b = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        return g > 120 and g > r + 20 and g > b + 20
+    if '\x1b[32m' in ansi_indicator or '\x1b[92m' in ansi_indicator:
+        return True
+    return False
+
+
+def _tool_summary_line(block_dict: dict) -> str:
+    """从工具调用 OutputBlock 提取一行摘要"""
+    content = block_dict.get("content", "")
+    first_line = content.split('\n', 1)[0].strip()
+    if not first_line:
+        return "🔧 ..."
+
+    _ICONS = {"Bash": "🔧", "Read": "📄", "Write": "📄",
+              "Update": "📝", "Edit": "📝", "Agent": "🤖",
+              "Searching": "🔍", "Searched": "🔍", "Search": "🔍",
+              "Listing": "📂", "WebFetch": "🌐", "WebSearch": "🔍"}
+
+    m = _TOOL_SUMMARY_RE.match(first_line)
+    if m:
+        tool = m.group(1)
+        arg = (m.group(2) or "").strip()
+        icon = _ICONS.get(tool, "🔧")
+        rest = first_line[m.end():].strip()
+        suffix = ""
+        if "⎿" in rest:
+            suffix = " — " + _re.split(r'⎿\s*', rest, 1)[-1].strip()[:40]
+        if tool == "Bash":
+            cmd = arg[:50] + ("…" if len(arg) > 50 else "")
+            return f"{icon} Bash: {cmd}{suffix}"
+        if arg:
+            return f"{icon} {tool}: {arg}{suffix}"
+        # 无括号参数（如 "Searching for 1 pattern..."）→ 包含完整首行
+        if rest and not suffix:
+            return f"{icon} {tool} {rest[:50]}"
+        return f"{icon} {tool}{suffix}"
+
+    if first_line.startswith("Read ") and "file" in first_line:
+        return f"📄 {first_line.split('(')[0].strip()[:60]}"
+
+    return f"🔧 {first_line[:60]}"
+
+
+def _render_block_collapsed(block_dict: dict) -> Optional[Dict[str, Any]]:
+    """工具调用 OutputBlock → collapsible_panel（默认折叠）"""
+    summary = _tool_summary_line(block_dict)
+    full_rendered = _render_block_colored(block_dict)
+    if full_rendered is None:
+        return {"tag": "collapsible_panel", "expanded": False,
+                "header": {"title": {"tag": "plain_text", "content": summary}},
+                "elements": [{"tag": "markdown", "content": summary}]}
+    return {
+        "tag": "collapsible_panel",
+        "expanded": False,
+        "header": {"title": {"tag": "plain_text", "content": summary}},
+        "elements": [{"tag": "markdown", "content": full_rendered}],
+    }
+
+
 def _escape_md(text: str) -> str:
     """转义飞书 markdown 特殊字符，并保留行首缩进
 
@@ -334,6 +407,8 @@ def _build_menu_button_row(session_name: Optional[str] = None, disconnected: boo
     shortcut_keys = [
         ("↑", {"action": "send_key", "key": "up"}),
         ("↓", {"action": "send_key", "key": "down"}),
+        ("←", {"action": "send_key", "key": "left"}),
+        ("→", {"action": "send_key", "key": "right"}),
         ("Ctrl+O", {"action": "send_key", "key": "ctrl_o"}),
         ("Shift+Tab", {"action": "send_key", "key": "shift_tab"}),
         ("ESC", {"action": "send_key", "key": "esc"}),
@@ -357,12 +432,12 @@ def _build_menu_button_row(session_name: Optional[str] = None, disconnected: boo
     row1 = {
         "tag": "column_set",
         "flex_mode": "none",
-        "columns": [_make_key_column(l, v) for l, v in shortcut_keys[:3]],
+        "columns": [_make_key_column(l, v) for l, v in shortcut_keys[:4]],
     }
     row2 = {
         "tag": "column_set",
         "flex_mode": "none",
-        "columns": [_make_key_column(l, v) for l, v in shortcut_keys[3:]],
+        "columns": [_make_key_column(l, v) for l, v in shortcut_keys[4:]],
     }
 
     collapsible = {
@@ -648,6 +723,7 @@ def build_stream_card(
     disconnected: bool = False,
     cli_type: str = "claude",
     status_only: bool = False,
+    collapse_tools: bool = False,
 ) -> Dict[str, Any]:
     """从共享内存 blocks 流构建飞书卡片
 
@@ -667,11 +743,18 @@ def build_stream_card(
         cli_type=cli_type,
     )
 
-    # === 第一层：内容区（status_only 时折叠，不渲染累积 blocks）===
+    # === 第一层：内容区 ===
+    # status_only 时仅渲染首个 UserInput（保留用户问题上下文），其余折叠
     elements = []
     has_content = False
 
-    if not status_only:
+    if status_only:
+        if blocks and blocks[0].get("_type") == "UserInput":
+            rendered = _render_block_colored(blocks[0])
+            if rendered:
+                has_content = True
+                elements.append({"tag": "markdown", "content": rendered})
+    else:
         for block_dict in blocks:
             typ = block_dict.get("_type", "")
             if typ == "PlanBlock":
@@ -679,6 +762,13 @@ def build_stream_card(
                 if plan_el:
                     has_content = True
                     elements.append(plan_el)
+                continue
+            if (collapse_tools and typ == "OutputBlock"
+                    and _is_tool_indicator(block_dict.get("ansi_indicator", ""))):
+                collapsed_el = _render_block_collapsed(block_dict)
+                if collapsed_el:
+                    has_content = True
+                    elements.append(collapsed_el)
                 continue
             rendered = _render_block_colored(block_dict)
             if rendered:
@@ -758,9 +848,12 @@ def build_stream_card(
         if buttons:
             elements.extend(_build_buttons_v2(buttons))
 
-    # === 第四层：菜单按钮 ===
+    # === 第四层：菜单按钮（冻结卡只保留菜单入口，不渲染输入框/快捷键）===
     elements.append({"tag": "hr"})
-    elements.extend(_build_menu_button_row(session_name=session_name, disconnected=disconnected))
+    if is_frozen:
+        elements.append(_build_menu_button_only())
+    else:
+        elements.extend(_build_menu_button_row(session_name=session_name, disconnected=disconnected))
 
     _cb_logger.debug(
         f"build_stream_card: blocks={len(blocks)} frozen={is_frozen} "
@@ -1028,7 +1121,7 @@ def build_dir_card(target, entries: List[Dict], sessions: List[Dict], tree: bool
         page = max(0, min(page, total_pages - 1))
         shown = entries[page * PER_PAGE : (page + 1) * PER_PAGE]
 
-    home_str = str(Path.home())
+    home_str = str(_pl.Path.home())
     for entry in shown:
         name = entry["name"]
         is_dir = entry["is_dir"]
@@ -1099,7 +1192,7 @@ def build_dir_card(target, entries: List[Dict], sessions: List[Dict], tree: bool
                             "behaviors": [{"type": "callback", "value": {
                                 "action": "dir_browse", "path": full_path
                             }}],
-                            "elements": [{"tag": "markdown", "content": f"📁 **{name}**"}]
+                            "elements": [{"tag": "markdown", "content": f"📁 **{display_name}**"}]
                         }]
                     },
                     {

@@ -72,6 +72,9 @@ class StreamTracker:
     # 简单模式（每轮一张独立卡片）：本轮起始 block 索引 + 触发本轮的 UserInput block_id
     simple_round_start: int = 0
     simple_last_user_bid: Optional[str] = None
+    # 就绪状态去抖：首次检测到就绪的时间戳，连续保持超过阈值才确认
+    # 初始设为 0.0（远早于当前时间），使首次 attach 到已就绪会话时立即确认
+    ready_since: Optional[float] = 0.0
 
 
 # ── 轮询器 ────────────────────────────────────────────────────────────────────
@@ -359,19 +362,16 @@ class SharedMemoryPoller:
         cli_type: str,
         has_valid_snapshot: bool = False,
     ) -> None:
-        """简单模式卡片更新：每轮一张独立卡片
+        """简单模式卡片更新：每轮一张独立卡片，工具调用折叠
 
         - 以最后一个 UserInput 为本轮起点；出现新的 UserInput → 冻结上一张卡、开新卡
-        - 执行中（非就绪）：只渲染状态卡（status_only，内容区折叠）
-        - 就绪：展开本轮全部 blocks 作为结果卡
-        - 需要交互（option_block）时：ready 通常为 True → 自动展开并显示选项按钮
+        - 始终渲染内容（collapse_tools=True）：文本完整显示，工具 block 折叠为一行摘要
+        - 不依赖 ready 状态控制显示（ready 仅用于通知）
         """
         from .card_builder import build_stream_card
 
         if not blocks and not status_line and not option_block and not has_valid_snapshot:
             return
-
-        ready = _is_ready(blocks, status_line, option_block, agent_panel)
 
         # 找本轮起点（最后一个 UserInput），无则本轮从 0 开始
         round_start = 0
@@ -416,38 +416,29 @@ class SharedMemoryPoller:
             active = None
 
         blocks_slice = blocks[tracker.simple_round_start:]
-        status_only = not ready
 
         card_dict = build_stream_card(
             blocks_slice, status_line, bottom_bar,
             agent_panel=agent_panel, option_block=option_block,
             session_name=tracker.session_name, cli_type=cli_type,
-            status_only=status_only,
+            collapse_tools=True,
         )
 
-        # 结果卡（展开内容）可能超限：从头裁剪本轮 blocks
+        # 超限裁剪：从头删减本轮 blocks
         start_idx = tracker.simple_round_start
-        if not status_only:
+        card_size = len(json.dumps(card_dict, ensure_ascii=False).encode('utf-8'))
+        while card_size > CARD_SIZE_LIMIT and len(blocks_slice) > 1:
+            blocks_slice = blocks_slice[1:]
+            start_idx += 1
+            card_dict = build_stream_card(
+                blocks_slice, status_line, bottom_bar,
+                agent_panel=agent_panel, option_block=option_block,
+                session_name=tracker.session_name, cli_type=cli_type,
+                collapse_tools=True,
+            )
             card_size = len(json.dumps(card_dict, ensure_ascii=False).encode('utf-8'))
-            while card_size > CARD_SIZE_LIMIT and len(blocks_slice) > 1:
-                blocks_slice = blocks_slice[1:]
-                start_idx += 1
-                card_dict = build_stream_card(
-                    blocks_slice, status_line, bottom_bar,
-                    agent_panel=agent_panel, option_block=option_block,
-                    session_name=tracker.session_name, cli_type=cli_type,
-                    status_only=status_only,
-                )
-                card_size = len(json.dumps(card_dict, ensure_ascii=False).encode('utf-8'))
 
-        # hash diff：status_only 时用 streaming 布尔代替 blocks 内容，避免执行中频繁无效刷新
-        if status_only:
-            has_streaming = any(b.get("is_streaming", False) for b in blocks_slice)
-            hash_blocks = [{"streaming": has_streaming}]
-        else:
-            hash_blocks = blocks_slice
-        new_hash = self._compute_hash(hash_blocks, status_line, bottom_bar, agent_panel, option_block)
-        new_hash += ":s" if status_only else ":f"
+        new_hash = self._compute_hash(blocks_slice, status_line, bottom_bar, agent_panel, option_block)
 
         if active is None:
             # 创建本轮新卡
@@ -460,7 +451,7 @@ class SharedMemoryPoller:
                              chat_id=tracker.chat_id)
                 logger.info(
                     f"[simple NEW] session={tracker.session_name} start_idx={start_idx} "
-                    f"status_only={status_only} card_id={card_id}"
+                    f"card_id={card_id}"
                 )
             else:
                 logger.warning(f"[simple] create_card 失败 session={tracker.session_name}")
@@ -488,10 +479,6 @@ class SharedMemoryPoller:
             _track_stats('card', 'update', session_name=tracker.session_name,
                          chat_id=tracker.chat_id)
         tracker.content_hash = new_hash
-        logger.debug(
-            f"[simple UPDATE] session={tracker.session_name} blocks={len(blocks_slice)} "
-            f"status_only={status_only} seq={active.sequence} hash={new_hash[:8]}"
-        )
 
     async def _create_new_card(
         self, tracker: StreamTracker, blocks: List[dict],
@@ -661,16 +648,41 @@ class SharedMemoryPoller:
             )
             tracker.last_notify_message_id = None
 
+    READY_DEBOUNCE = 2.0  # 就绪状态去抖：连续 N 秒保持 ready 才确认
+
     def _update_ready_state(
         self, tracker: StreamTracker,
         blocks: list, status_line: Optional[dict], option_block: Optional[dict],
         agent_panel: Optional[dict] = None,
     ) -> bool:
-        """更新就绪状态，返回是否需要发送就绪通知（不执行发送）"""
-        current_ready = _is_ready(blocks, status_line, option_block, agent_panel)
+        """更新就绪状态（含去抖），返回是否需要发送就绪通知（不执行发送）
+
+        去抖逻辑：_is_ready() 首次返回 True 时开始计时，连续保持超过
+        READY_DEBOUNCE 秒才确认为真正就绪。中途变 False 则重置计时器。
+        option_block 存在时跳过去抖（需立即展开交互按钮）。
+        """
+        raw_ready = _is_ready(blocks, status_line, option_block, agent_panel)
+        now = time.time()
+
+        if raw_ready:
+            if tracker.ready_since is None:
+                tracker.ready_since = now
+        else:
+            tracker.ready_since = None
+
+        # option_block 在场时跳过去抖（用户需要立即看到选项按钮）
+        if option_block is not None:
+            confirmed = raw_ready
+        else:
+            confirmed = (
+                raw_ready
+                and tracker.ready_since is not None
+                and (now - tracker.ready_since) >= self.READY_DEBOUNCE
+            )
+
         prev_ready = tracker.prev_is_ready
-        tracker.prev_is_ready = current_ready
-        return current_ready and not prev_ready and tracker.is_group and _notify_enabled
+        tracker.prev_is_ready = confirmed
+        return confirmed and not prev_ready and tracker.is_group and _notify_enabled
 
     async def _send_ready_notification(
         self, tracker: StreamTracker, cli_type: str = "claude"

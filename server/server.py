@@ -134,6 +134,7 @@ class _FrameObs:
     ts: float
     status_line: Optional[object]  # 本帧的 StatusLine（None=无）
     block_blink: bool = False      # 本帧最后一个 OutputBlock 是否 is_streaming=True
+    option_block: Optional[object] = None  # 本帧的 OptionBlock（None=无）
     has_background_agents: bool = False  # 底部栏是否有后台 agent 信息
     # 用于字符变化检测（增强闪烁判断）
     last_ob_start_row: int = -1          # 最后 OutputBlock 的起始行号（跨帧识别同一 block）
@@ -350,6 +351,7 @@ class OutputWatcher:
                 ts=now,
                 status_line=raw_status_line,
                 block_blink=last_ob_blink,
+                option_block=raw_option_block,
                 has_background_agents=getattr(raw_bottom_bar, 'has_background_agents', False) if raw_bottom_bar else False,
                 last_ob_start_row=last_ob_start_row,
                 last_ob_indicator_char=last_ob_indicator_char,
@@ -406,6 +408,17 @@ class OutputWatcher:
                         b.is_streaming = True
                         break
 
+            # 4d. option_block 平滑：❯ 光标闪烁时 parser 可能漏检 OptionBlock，
+            #     窗口内最新非 None 值保底（同一 block_id 视为同一选项交互）
+            display_option = raw_option_block
+            if display_option is None:
+                prev_opt = next(
+                    (o.option_block for o in reversed(window_list) if o.option_block is not None),
+                    None
+                )
+                if prev_opt is not None:
+                    display_option = prev_opt
+
             # 5. 直接使用 visible_blocks（VirtualScreen 已包含 history.top + 当前屏幕）
             all_blocks = visible_blocks
 
@@ -424,7 +437,7 @@ class OutputWatcher:
                 status_line=display_status,
                 bottom_bar=raw_bottom_bar,
                 agent_panel=raw_agent_panel,
-                option_block=raw_option_block,
+                option_block=display_option,
                 input_area_text=input_text,
                 input_area_ansi_text=input_ansi_text,
                 timestamp=now,
