@@ -104,12 +104,6 @@ def _256_to_lark(n: int) -> str:
 
 
 _TOOL_IND_RGB_RE = _re.compile(r'\x1b\[38;2;(\d+);(\d+);(\d+)')
-_TOOL_SUMMARY_RE = _re.compile(
-    r'^(Bash|Read|Write|Update|Edit|Search(?:ed|ing)?|TodoRead|Task|Agent|Listing|WebFetch|WebSearch)'
-    r'(?:\(([^)]*)\))?'
-)
-
-
 def _is_tool_indicator(ansi_indicator: str) -> bool:
     """OutputBlock 指示符颜色是否为工具调用（绿色）"""
     if not ansi_indicator:
@@ -121,59 +115,6 @@ def _is_tool_indicator(ansi_indicator: str) -> bool:
     if '\x1b[32m' in ansi_indicator or '\x1b[92m' in ansi_indicator:
         return True
     return False
-
-
-def _tool_summary_line(block_dict: dict) -> str:
-    """从工具调用 OutputBlock 提取一行摘要"""
-    content = block_dict.get("content", "")
-    first_line = content.split('\n', 1)[0].strip()
-    if not first_line:
-        return "🔧 ..."
-
-    _ICONS = {"Bash": "🔧", "Read": "📄", "Write": "📄",
-              "Update": "📝", "Edit": "📝", "Agent": "🤖",
-              "Searching": "🔍", "Searched": "🔍", "Search": "🔍",
-              "Listing": "📂", "WebFetch": "🌐", "WebSearch": "🔍"}
-
-    m = _TOOL_SUMMARY_RE.match(first_line)
-    if m:
-        tool = m.group(1)
-        arg = (m.group(2) or "").strip()
-        icon = _ICONS.get(tool, "🔧")
-        rest = first_line[m.end():].strip()
-        suffix = ""
-        if "⎿" in rest:
-            suffix = " — " + _re.split(r'⎿\s*', rest, 1)[-1].strip()[:40]
-        if tool == "Bash":
-            cmd = arg[:50] + ("…" if len(arg) > 50 else "")
-            return f"{icon} Bash: {cmd}{suffix}"
-        if arg:
-            return f"{icon} {tool}: {arg}{suffix}"
-        # 无括号参数（如 "Searching for 1 pattern..."）→ 包含完整首行
-        if rest and not suffix:
-            return f"{icon} {tool} {rest[:50]}"
-        return f"{icon} {tool}{suffix}"
-
-    if first_line.startswith("Read ") and "file" in first_line:
-        return f"📄 {first_line.split('(')[0].strip()[:60]}"
-
-    return f"🔧 {first_line[:60]}"
-
-
-def _render_block_collapsed(block_dict: dict) -> Optional[Dict[str, Any]]:
-    """工具调用 OutputBlock → collapsible_panel（默认折叠）"""
-    summary = _tool_summary_line(block_dict)
-    full_rendered = _render_block_colored(block_dict)
-    if full_rendered is None:
-        return {"tag": "collapsible_panel", "expanded": False,
-                "header": {"title": {"tag": "plain_text", "content": summary}},
-                "elements": [{"tag": "markdown", "content": summary}]}
-    return {
-        "tag": "collapsible_panel",
-        "expanded": False,
-        "header": {"title": {"tag": "plain_text", "content": summary}},
-        "elements": [{"tag": "markdown", "content": full_rendered}],
-    }
 
 
 def _escape_md(text: str) -> str:
@@ -723,7 +664,7 @@ def build_stream_card(
     disconnected: bool = False,
     cli_type: str = "claude",
     status_only: bool = False,
-    collapse_tools: bool = False,
+    skip_tools: bool = False,
 ) -> Dict[str, Any]:
     """从共享内存 blocks 流构建飞书卡片
 
@@ -763,12 +704,8 @@ def build_stream_card(
                     has_content = True
                     elements.append(plan_el)
                 continue
-            if (collapse_tools and typ == "OutputBlock"
+            if (skip_tools and typ == "OutputBlock"
                     and _is_tool_indicator(block_dict.get("ansi_indicator", ""))):
-                collapsed_el = _render_block_collapsed(block_dict)
-                if collapsed_el:
-                    has_content = True
-                    elements.append(collapsed_el)
                 continue
             rendered = _render_block_colored(block_dict)
             if rendered:

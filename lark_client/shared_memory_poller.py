@@ -365,7 +365,7 @@ class SharedMemoryPoller:
         """简单模式卡片更新：每轮一张独立卡片，工具调用折叠
 
         - 以最后一个 UserInput 为本轮起点；出现新的 UserInput → 冻结上一张卡、开新卡
-        - 始终渲染内容（collapse_tools=True）：文本完整显示，工具 block 折叠为一行摘要
+        - 始终渲染内容（skip_tools=True）：文本完整显示，工具 block 直接跳过不渲染
         - 不依赖 ready 状态控制显示（ready 仅用于通知）
         """
         from .card_builder import build_stream_card
@@ -421,7 +421,7 @@ class SharedMemoryPoller:
             blocks_slice, status_line, bottom_bar,
             agent_panel=agent_panel, option_block=option_block,
             session_name=tracker.session_name, cli_type=cli_type,
-            collapse_tools=True,
+            skip_tools=True,
         )
 
         # 超限裁剪：从头删减本轮 blocks
@@ -434,7 +434,7 @@ class SharedMemoryPoller:
                 blocks_slice, status_line, bottom_bar,
                 agent_panel=agent_panel, option_block=option_block,
                 session_name=tracker.session_name, cli_type=cli_type,
-                collapse_tools=True,
+                skip_tools=True,
             )
             card_size = len(json.dumps(card_dict, ensure_ascii=False).encode('utf-8'))
 
