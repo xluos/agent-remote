@@ -351,11 +351,11 @@ def cmd_list(args):
 
     print("活跃会话:")
     print("-" * 50)
-    print(f"{'类型':<8} {'PID':<10} {'tmux':<10} {'名称'}")
+    print(f"{'类型':<8} {'PID':<10} {'托管':<10} {'名称'}")
     print("-" * 50)
 
     for s in sessions:
-        tmux_status = "是" if s["tmux"] else "否"
+        host_mode = "tmux" if s["tmux"] else "进程"
         cli_type = s.get('cli_type', 'claude')
         # 根据类型选择颜色
         if cli_type == 'codex':
@@ -364,7 +364,7 @@ def cmd_list(args):
             cli_colored = f"{YELLOW}{cli_type}{RESET}"
         # 带颜色的字段需要单独计算宽度
         padding = " " * (8 - len(cli_type))
-        print(f"{cli_colored}{padding} {s['pid']:<10} {tmux_status:<10} {s['name']}")
+        print(f"{cli_colored}{padding} {s['pid']:<10} {host_mode:<10} {s['name']}")
 
     print("-" * 50)
     print(f"共 {len(sessions)} 个会话")
@@ -409,6 +409,27 @@ def cmd_kill(args):
     if tmux_session_exists(session_name):
         tmux_kill_session(session_name)
         print("  - tmux 会话已终止")
+    else:
+        # 非 tmux 托管（如飞书端启动的进程），需要直接杀进程
+        pid_file = get_pid_file(session_name)
+        if pid_file.exists():
+            try:
+                pid = int(pid_file.read_text().strip())
+                os.kill(pid, 0)
+                os.kill(pid, signal.SIGTERM)
+                for _ in range(30):
+                    time.sleep(0.1)
+                    try:
+                        os.kill(pid, 0)
+                    except ProcessLookupError:
+                        break
+                else:
+                    os.kill(pid, signal.SIGKILL)
+                print(f"  - 进程 {pid} 已终止")
+            except ProcessLookupError:
+                print(f"  - 进程已不存在")
+            except (ValueError, OSError) as e:
+                print(f"  - 终止进程失败: {e}")
 
     # 清理文件
     cleanup_session(session_name)
