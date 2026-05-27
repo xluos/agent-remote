@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agents Remote 架构全景</title>
+    <style>
+      :root {
+        --paper: #f7f7f5;
+        --paper-edge: #efefea;
+        --ink: #1a1a1a;
+        --ink-soft: #4a4a4a;
+        --ink-faint: #7a7a7a;
+        --rule: #d8d8d2;
+        --rule-soft: #e8e8e2;
+        --accent: #6f9bb8;
+        --accent-soft: #d9e6f0;
+        --accent-faint: #eef4f8;
+        --warn: #b88a4a;
+        --warn-soft: #f5ecdc;
+        --danger: #a05050;
+        --code-bg: #ececea;
+        --brain: #6f9bb8;
+        --brain-bg: #eef4f8;
+        --hands: #b88a4a;
+        --hands-bg: #f5ecdc;
+        --session: #6b7560;
+        --session-bg: #ecede5;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html { font-size: 16px; }
+      body {
+        font-family: ui-serif, "Charter", "Iowan Old Style", Georgia, "Songti SC", "Source Han Serif SC", serif;
+        background: var(--paper); color: var(--ink); line-height: 1.6;
+        -webkit-font-smoothing: antialiased; padding: 64px 24px 96px;
+      }
+      .doc { max-width: 840px; margin: 0 auto; }
+      .doc-header { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 48px; }
+      .doc-eyebrow {
+        font-family: ui-monospace, "SF Mono", Menlo, "PingFang SC", monospace;
+        font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+        color: var(--ink-faint); margin-bottom: 14px;
+      }
+      .doc-title { font-family: ui-serif, Charter, Georgia, "Songti SC", serif; font-size: 34px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; }
+      .doc-subtitle { font-size: 16px; color: var(--ink-soft); margin-top: 10px; font-style: italic; }
+      .doc-meta {
+        font-family: ui-monospace, Menlo, "PingFang SC", monospace;
+        font-size: 11px; color: var(--ink-faint); margin-top: 18px; display: flex; gap: 24px;
+      }
+      .tldr { background: var(--accent-faint); border-left: 2px solid var(--accent); padding: 20px 24px; margin-bottom: 56px; font-size: 15px; }
+      .tldr-label { font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; font-weight: 600; }
+      section { margin-bottom: 56px; }
+      h2 { font-size: 22px; font-weight: 600; margin-bottom: 18px; padding-bottom: 10px; border-bottom: 1px solid var(--rule); }
+      h2 .num { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--ink-faint); font-weight: 500; margin-right: 14px; letter-spacing: 0.05em; }
+      h3 { font-size: 16px; font-weight: 600; margin: 28px 0 10px; }
+      p { margin-bottom: 14px; }
+      code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; background: var(--code-bg); padding: 1px 5px; border-radius: 2px; }
+      pre { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; line-height: 1.55; background: var(--code-bg); padding: 14px 18px; margin: 14px 0 18px; overflow-x: auto; border-left: 2px solid var(--rule); }
+      pre code { background: transparent; padding: 0; }
+      ul, ol { margin: 8px 0 16px 22px; }
+      li { margin-bottom: 6px; }
+      strong { font-weight: 600; }
+      em { color: var(--ink-soft); }
+      table { width: 100%; border-collapse: collapse; margin: 14px 0 18px; font-size: 14px; }
+      th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+      th { font-weight: 600; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-faint); border-bottom: 1px solid var(--rule); }
+      tbody tr:hover { background: rgba(0,0,0,0.015); }
+      .callout { border: 1px solid var(--rule); background: #fff; padding: 16px 18px; margin: 16px 0 20px; }
+      .callout.warn { border-color: #e6d4a8; background: var(--warn-soft); }
+      .callout-label { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 8px; font-weight: 600; }
+      .callout.warn .callout-label { color: var(--warn); }
+      figure { margin: 28px 0 32px; border: 1px solid var(--rule); background: #fff; }
+      figure svg { display: block; width: 100%; height: auto; }
+      figcaption { font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); padding: 10px 16px; border-top: 1px solid var(--rule-soft); background: var(--paper-edge); }
+      figcaption .fig-num { color: var(--accent); margin-right: 10px; font-weight: 600; }
+      .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 20px 0 18px; }
+      .cards.cols-2 { grid-template-columns: repeat(2, 1fr); }
+      .card { border: 1px solid var(--rule); background: #fff; padding: 16px 16px 14px; }
+      .card-icon { font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; font-weight: 600; }
+      .card-name { font-family: ui-serif, Charter, Georgia, serif; font-size: 17px; font-weight: 600; margin-bottom: 6px; }
+      .card-desc { font-size: 13px; color: var(--ink-soft); line-height: 1.5; }
+      .card.tone-a .card-icon { color: var(--brain); }
+      .card.tone-b .card-icon { color: var(--hands); }
+      .card.tone-c .card-icon { color: var(--session); }
+      .mascot { display: inline-block; width: 8px; height: 8px; background: var(--accent); margin-right: 8px; vertical-align: middle; }
+      footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--rule); font-size: 12px; color: var(--ink-faint); }
+      footer h4 { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; font-family: ui-monospace, Menlo, monospace; margin-bottom: 10px; color: var(--ink-soft); }
+      footer ul { list-style: none; margin-left: 0; }
+      footer li { margin-bottom: 4px; }
+      @media (max-width: 720px) {
+        body { padding: 32px 16px 64px; }
+        .doc-title { font-size: 26px; }
+        .cards, .cards.cols-2 { grid-template-columns: 1fr; }
+        .doc-meta { flex-wrap: wrap; gap: 12px; }
+      }
+    </style>
+  </head>
+  <body>
+    <article class="doc">
+
+      <header class="doc-header">
+        <div class="doc-eyebrow"><span class="mascot"></span>Architecture Guide</div>
+        <h1 class="doc-title">Agents Remote 架构全景</h1>
+        <p class="doc-subtitle">两个仓库、三层服务、四条通信通道</p>
+        <div class="doc-meta">
+          <span>STATUS &middot; Living doc</span>
+          <span>DATE &middot; 2026-05-27</span>
+        </div>
+      </header>
+
+      <div class="tldr">
+        <div class="tldr-label">TL;DR</div>
+        <code>agents-remote-core</code> 的 server 在 PTY 中运行 Claude/Codex CLI，解析终端输出 + 注入 hooks 获取权威状态，全量快照写入共享内存（<code>.mq</code>）。<code>agents-remote</code> 的 lark 客户端通过 WebSocket 连接飞书，每秒轮询共享内存渲染卡片。用户交互通过飞书回调 → lark handler → Unix socket → server → PTY/hook response 闭环。两个仓库通过共享内存文件解耦，进程完全独立。
+      </div>
+
+      <!-- ════════════════════════════════════════════════════ -->
+      <section>
+        <h2><span class="num">01</span>两个仓库的定位</h2>
+
+        <div class="cards cols-2">
+          <div class="card tone-a">
+            <div class="card-icon">agents-remote-core</div>
+            <div class="card-name">PTY Server + Hook Harness</div>
+            <div class="card-desc">
+              管理 Claude/Codex CLI 进程生命周期。负责 PTY 创建、终端输出解析（pyte）、hook 注入和状态追踪、共享内存写入。<strong>不关心飞书。</strong>
+            </div>
+          </div>
+          <div class="card tone-b">
+            <div class="card-icon">agents-remote</div>
+            <div class="card-name">Lark Client + 快捷 CLI</div>
+            <div class="card-desc">
+              飞书机器人（WebSocket 长连接）、卡片渲染、用户交互处理。同时提供 <code>cla</code>/<code>cl</code>/<code>cx</code> 等快捷命令。<strong>不管 PTY。</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout warn">
+          <div class="callout-label">当前状态</div>
+          <code>agents-remote</code> 内部也有一份 <code>server/server.py</code>（历史遗留），<code>cla</code>/<code>cl</code> 快捷命令启动的是这个旧 server。要用到 <code>agents-remote-core</code> 的 hook 能力，需要改为启动 core 的 server，或将 core 的 <code>hooks.py</code> 移植过来。
+        </div>
+      </section>
+
+      <!-- ════════════════════════════════════════════════════ -->
+      <section>
+        <h2><span class="num">02</span>三层服务架构</h2>
+
+        <figure>
+          <svg viewBox="0 0 780 520" xmlns="http://www.w3.org/2000/svg"
+               font-family="ui-monospace, Menlo, monospace" font-size="12">
+            <rect width="780" height="520" fill="#fff"/>
+
+            <!-- Layer labels -->
+            <text x="30" y="80" fill="#6f9bb8" font-weight="600" font-size="11" letter-spacing="0.1em">LAYER 1</text>
+            <text x="30" y="95" fill="#7a7a7a" font-size="10">PTY + Hook</text>
+
+            <text x="30" y="260" fill="#b88a4a" font-weight="600" font-size="11" letter-spacing="0.1em">LAYER 2</text>
+            <text x="30" y="275" fill="#7a7a7a" font-size="10">IPC Bridge</text>
+
+            <text x="30" y="430" fill="#6b7560" font-weight="600" font-size="11" letter-spacing="0.1em">LAYER 3</text>
+            <text x="30" y="445" fill="#7a7a7a" font-size="10">Lark Client</text>
+
+            <!-- Layer 1: PTY + Hooks -->
+            <rect x="120" y="40" width="200" height="120" fill="#eef4f8" stroke="#6f9bb8" stroke-width="1.4" rx="4"/>
+            <text x="135" y="62" fill="#6f9bb8" font-weight="600" font-size="11" letter-spacing="0.1em">CLAUDE / CODEX CLI</text>
+            <text x="135" y="82" fill="#4a4a4a" font-size="10.5">在 PTY 中运行</text>
+            <text x="135" y="100" fill="#4a4a4a" font-size="10.5">终端输出 → pyte Screen</text>
+            <text x="135" y="118" fill="#4a4a4a" font-size="10.5">--settings / hooks.json 注入</text>
+
+            <rect x="380" y="40" width="180" height="120" fill="#eef4f8" stroke="#6f9bb8" stroke-width="1.4" rx="4"/>
+            <text x="395" y="62" fill="#6f9bb8" font-weight="600" font-size="11" letter-spacing="0.1em">HOOK HARNESS</text>
+            <text x="395" y="82" fill="#4a4a4a" font-size="10.5">FIFO reader (events)</text>
+            <text x="395" y="100" fill="#4a4a4a" font-size="10.5">HookState 权威状态</text>
+            <text x="395" y="118" fill="#4a4a4a" font-size="10.5">resp_* 响应文件</text>
+
+            <rect x="610" y="40" width="150" height="120" fill="#eef4f8" stroke="#6f9bb8" stroke-width="1.4" rx="4"/>
+            <text x="625" y="62" fill="#6f9bb8" font-weight="600" font-size="11" letter-spacing="0.1em">OUTPUT WATCHER</text>
+            <text x="625" y="82" fill="#4a4a4a" font-size="10.5">pyte → parser</text>
+            <text x="625" y="100" fill="#4a4a4a" font-size="10.5">平滑 → ClaudeWindow</text>
+            <text x="625" y="118" fill="#4a4a4a" font-size="10.5">含 hook_state ref</text>
+
+            <!-- Layer 2: IPC -->
+            <rect x="120" y="220" width="200" height="100" fill="#f5ecdc" stroke="#b88a4a" stroke-width="1.4" rx="4"/>
+            <text x="135" y="242" fill="#7a6420" font-weight="600" font-size="11" letter-spacing="0.1em">SHARED MEMORY (.mq)</text>
+            <text x="135" y="262" fill="#4a4a4a" font-size="10.5">200MB mmap 文件</text>
+            <text x="135" y="280" fill="#4a4a4a" font-size="10.5">ClaudeWindow 全量快照</text>
+            <text x="135" y="298" fill="#4a4a4a" font-size="10.5">含 blocks + hook_state</text>
+
+            <rect x="380" y="220" width="180" height="100" fill="#f5ecdc" stroke="#b88a4a" stroke-width="1.4" rx="4"/>
+            <text x="395" y="242" fill="#7a6420" font-weight="600" font-size="11" letter-spacing="0.1em">UNIX SOCKET (.sock)</text>
+            <text x="395" y="262" fill="#4a4a4a" font-size="10.5">7 种消息类型</text>
+            <text x="395" y="280" fill="#4a4a4a" font-size="10.5">INPUT / OUTPUT / CONTROL</text>
+            <text x="395" y="298" fill="#4a4a4a" font-size="10.5">PERMISSION / QUESTION resp</text>
+
+            <rect x="610" y="220" width="150" height="100" fill="#f5ecdc" stroke="#b88a4a" stroke-width="1.4" rx="4"/>
+            <text x="625" y="242" fill="#7a6420" font-weight="600" font-size="11" letter-spacing="0.1em">FIFO (events.fifo)</text>
+            <text x="625" y="262" fill="#4a4a4a" font-size="10.5">hook 事件管道</text>
+            <text x="625" y="280" fill="#4a4a4a" font-size="10.5">event\tpayload 格式</text>
+            <text x="625" y="298" fill="#4a4a4a" font-size="10.5">relay.sh / permission.sh</text>
+
+            <!-- Layer 3: Lark -->
+            <rect x="120" y="390" width="200" height="110" fill="#ecede5" stroke="#6b7560" stroke-width="1.4" rx="4"/>
+            <text x="135" y="412" fill="#6b7560" font-weight="600" font-size="11" letter-spacing="0.1em">SHARED MEMORY POLLER</text>
+            <text x="135" y="432" fill="#4a4a4a" font-size="10.5">每秒轮询 .mq 文件</text>
+            <text x="135" y="450" fill="#4a4a4a" font-size="10.5">hash diff → 卡片更新</text>
+            <text x="135" y="468" fill="#4a4a4a" font-size="10.5">hook/解析 双模式</text>
+            <text x="135" y="486" fill="#4a4a4a" font-size="10.5">CardSlice 滚动窗口</text>
+
+            <rect x="380" y="390" width="180" height="110" fill="#ecede5" stroke="#6b7560" stroke-width="1.4" rx="4"/>
+            <text x="395" y="412" fill="#6b7560" font-weight="600" font-size="11" letter-spacing="0.1em">LARK HANDLER</text>
+            <text x="395" y="432" fill="#4a4a4a" font-size="10.5">命令路由 / 会话管理</text>
+            <text x="395" y="450" fill="#4a4a4a" font-size="10.5">选项选择 (arrow keys)</text>
+            <text x="395" y="468" fill="#4a4a4a" font-size="10.5">hook 多问题答案收集</text>
+            <text x="395" y="486" fill="#4a4a4a" font-size="10.5">→ send_question_response</text>
+
+            <rect x="610" y="390" width="150" height="110" fill="#ecede5" stroke="#6b7560" stroke-width="1.4" rx="4"/>
+            <text x="625" y="412" fill="#6b7560" font-weight="600" font-size="11" letter-spacing="0.1em">FEISHU BOT</text>
+            <text x="625" y="432" fill="#4a4a4a" font-size="10.5">WebSocket 长连接</text>
+            <text x="625" y="450" fill="#4a4a4a" font-size="10.5">接收消息 + 卡片回调</text>
+            <text x="625" y="468" fill="#4a4a4a" font-size="10.5">card_builder 渲染</text>
+            <text x="625" y="486" fill="#4a4a4a" font-size="10.5">card_service API</text>
+
+            <!-- Arrows -->
+            <defs>
+              <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#6f9bb8"/>
+              </marker>
+              <marker id="arr-w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#b88a4a"/>
+              </marker>
+              <marker id="arr-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#6b7560"/>
+              </marker>
+            </defs>
+
+            <!-- L1 internal: CLI → OutputWatcher -->
+            <path d="M 320 100 L 608 100" fill="none" stroke="#6f9bb8" stroke-width="1.2" marker-end="url(#arr)"/>
+            <text x="460" y="92" fill="#7a7a7a" font-size="9.5" text-anchor="middle">PTY data</text>
+
+            <!-- L1 internal: CLI ↔ HookHarness -->
+            <path d="M 320 70 L 378 70" fill="none" stroke="#6f9bb8" stroke-width="1.2" marker-end="url(#arr)"/>
+            <text x="349" y="63" fill="#7a7a7a" font-size="9.5" text-anchor="middle">hook events</text>
+
+            <!-- L1 → L2: OutputWatcher → .mq -->
+            <path d="M 685 160 L 685 192 L 220 192 L 220 218" fill="none" stroke="#b88a4a" stroke-width="1.2" marker-end="url(#arr-w)"/>
+            <text x="450" y="186" fill="#7a7a7a" font-size="9.5" text-anchor="middle">write_snapshot(ClaudeWindow)</text>
+
+            <!-- L2 → L3: .mq → Poller -->
+            <path d="M 220 320 L 220 388" fill="none" stroke="#6b7560" stroke-width="1.2" marker-end="url(#arr-g)"/>
+            <text x="224" y="358" fill="#7a7a7a" font-size="9.5">read()</text>
+
+            <!-- L3 → L2: Handler → socket -->
+            <path d="M 470 390 L 470 322" fill="none" stroke="#6b7560" stroke-width="1.2" marker-end="url(#arr-g)"/>
+            <text x="474" y="358" fill="#7a7a7a" font-size="9.5">send_input / send_*_response</text>
+
+            <!-- L2: socket → server (L1) -->
+            <path d="M 470 220 L 470 192 L 280 192 L 280 160" fill="none" stroke="#b88a4a" stroke-width="1.2" marker-end="url(#arr-w)"/>
+            <text x="375" y="210" fill="#7a7a7a" font-size="9.5" text-anchor="middle">write PTY / respond hook</text>
+
+          </svg>
+          <figcaption><span class="fig-num">FIG 1</span>三层架构总览 &mdash; PTY+Hook / IPC Bridge / Lark Client</figcaption>
+        </figure>
+      </section>
+
+      <!-- ════════════════════════════════════════════════════ -->
+      <section>
+        <h2><span class="num">03</span>四条通信通道</h2>
+
+        <table>
+          <thead>
+            <tr>
+              <th>通道</th>
+              <th>介质</th>
+              <th>方向</th>
+              <th>承载数据</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>共享内存 <code>.mq</code></strong></td>
+              <td>200MB mmap 文件</td>
+              <td>Server → Poller（单向写读）</td>
+              <td>ClaudeWindow 全量快照：blocks、status_line、bottom_bar、agent_panel、option_block、<strong>hook_state</strong></td>
+            </tr>
+            <tr>
+              <td><strong>Unix Socket <code>.sock</code></strong></td>
+              <td>AsyncIO stream</td>
+              <td>双向（Lark ↔ Server）</td>
+              <td>INPUT（用户输入）、OUTPUT（终端输出广播）、RESIZE、<strong>PermissionResponse</strong>、<strong>QuestionResponse</strong></td>
+            </tr>
+            <tr>
+              <td><strong>FIFO <code>events.fifo</code></strong></td>
+              <td>Named pipe</td>
+              <td>Hook 脚本 → Server</td>
+              <td>SessionStart / Stop / PreToolUse / PostToolUse / PermissionRequest 等事件，<code>event\tJSON</code> 格式</td>
+            </tr>
+            <tr>
+              <td><strong>响应文件 <code>resp_*</code></strong></td>
+              <td>普通文件（原子写）</td>
+              <td>Server → Hook 脚本</td>
+              <td>PermissionRequest allow/deny、AskUserQuestion 的 updatedInput.answers</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- ════════════════════════════════════════════════════ -->
+      <section>
+        <h2><span class="num">04</span>完整数据流（以用户在飞书点击选项为例）</h2>
+
+        <figure>
+          <svg viewBox="0 0 780 440" xmlns="http://www.w3.org/2000/svg"
+               font-family="ui-monospace, Menlo, monospace" font-size="11">
+            <rect width="780" height="440" fill="#fff"/>
+
+            <!-- Timeline labels -->
+            <text x="80" y="30" fill="#6f9bb8" font-weight="600" font-size="10" letter-spacing="0.1em">CLAUDE CLI</text>
+            <text x="240" y="30" fill="#b88a4a" font-weight="600" font-size="10" letter-spacing="0.1em">SERVER</text>
+            <text x="420" y="30" fill="#6b7560" font-weight="600" font-size="10" letter-spacing="0.1em">LARK CLIENT</text>
+            <text x="620" y="30" fill="#a05050" font-weight="600" font-size="10" letter-spacing="0.1em">FEISHU USER</text>
+
+            <!-- Vertical lifelines -->
+            <line x1="120" y1="40" x2="120" y2="420" stroke="#d8d8d2" stroke-dasharray="4 3"/>
+            <line x1="290" y1="40" x2="290" y2="420" stroke="#d8d8d2" stroke-dasharray="4 3"/>
+            <line x1="470" y1="40" x2="470" y2="420" stroke="#d8d8d2" stroke-dasharray="4 3"/>
+            <line x1="660" y1="40" x2="660" y2="420" stroke="#d8d8d2" stroke-dasharray="4 3"/>
+
+            <!-- Step 1: Claude calls AskUserQuestion -->
+            <rect x="50" y="55" width="140" height="24" fill="#eef4f8" stroke="#6f9bb8" rx="3"/>
+            <text x="120" y="71" text-anchor="middle" fill="#4a4a4a" font-size="10">AskUserQuestion</text>
+
+            <!-- Step 2: PreToolUse hook fires -->
+            <path d="M 120 79 L 290 95" fill="none" stroke="#6f9bb8" stroke-width="1.2" marker-end="url(#arr)"/>
+            <text x="200" y="82" fill="#7a7a7a" font-size="9">FIFO: PreToolUse</text>
+
+            <!-- Step 3: HookState updated, snapshot written -->
+            <rect x="220" y="100" width="140" height="24" fill="#f5ecdc" stroke="#b88a4a" rx="3"/>
+            <text x="290" y="116" text-anchor="middle" fill="#4a4a4a" font-size="10">HookState.pending_q</text>
+
+            <path d="M 290 124 L 290 140" fill="none" stroke="#b88a4a" stroke-width="1.2"/>
+            <rect x="220" y="140" width="140" height="24" fill="#f5ecdc" stroke="#b88a4a" rx="3"/>
+            <text x="290" y="156" text-anchor="middle" fill="#4a4a4a" font-size="10">write_snapshot(.mq)</text>
+
+            <!-- Step 4: Poller reads snapshot -->
+            <path d="M 290 164 L 470 180" fill="none" stroke="#6b7560" stroke-width="1.2" marker-end="url(#arr-g)"/>
+            <text x="370" y="168" fill="#7a7a7a" font-size="9">poll .mq → hook_state</text>
+
+            <!-- Step 5: Card with buttons rendered -->
+            <rect x="400" y="185" width="140" height="24" fill="#ecede5" stroke="#6b7560" rx="3"/>
+            <text x="470" y="201" text-anchor="middle" fill="#4a4a4a" font-size="10">build_hook_buttons</text>
+
+            <path d="M 470 209 L 660 225" fill="none" stroke="#6b7560" stroke-width="1.2" marker-end="url(#arr-g)"/>
+            <text x="555" y="213" fill="#7a7a7a" font-size="9">飞书卡片 + 按钮</text>
+
+            <!-- Step 6: User clicks button -->
+            <rect x="600" y="230" width="120" height="24" fill="#f0d0d0" stroke="#a05050" rx="3"/>
+            <text x="660" y="246" text-anchor="middle" fill="#4a4a4a" font-size="10">点击选项按钮</text>
+
+            <path d="M 660 254 L 470 270" fill="none" stroke="#a05050" stroke-width="1.2" marker-end="url(#arr-g)"/>
+            <text x="555" y="258" fill="#7a7a7a" font-size="9">callback action</text>
+
+            <!-- Step 7: Handler collects answer, sends response -->
+            <rect x="400" y="275" width="140" height="24" fill="#ecede5" stroke="#6b7560" rx="3"/>
+            <text x="470" y="291" text-anchor="middle" fill="#4a4a4a" font-size="10">handle_hook_question</text>
+
+            <path d="M 470 299 L 290 315" fill="none" stroke="#6b7560" stroke-width="1.2" marker-end="url(#arr-g)"/>
+            <text x="375" y="303" fill="#7a7a7a" font-size="9">QuestionResponseMsg</text>
+
+            <!-- Step 8: Server writes response file -->
+            <rect x="220" y="320" width="140" height="24" fill="#f5ecdc" stroke="#b88a4a" rx="3"/>
+            <text x="290" y="336" text-anchor="middle" fill="#4a4a4a" font-size="10">respond_question</text>
+
+            <path d="M 290 344 L 120 360" fill="none" stroke="#b88a4a" stroke-width="1.2" marker-end="url(#arr-w)"/>
+            <text x="200" y="348" fill="#7a7a7a" font-size="9">resp_* file</text>
+
+            <!-- Step 9: Hook script reads response, Claude continues -->
+            <rect x="50" y="365" width="140" height="24" fill="#eef4f8" stroke="#6f9bb8" rx="3"/>
+            <text x="120" y="381" text-anchor="middle" fill="#4a4a4a" font-size="10">updatedInput.answers</text>
+
+            <rect x="50" y="395" width="140" height="24" fill="#eef4f8" stroke="#6f9bb8" rx="3"/>
+            <text x="120" y="411" text-anchor="middle" fill="#4a4a4a" font-size="10">跳过交互 UI，继续</text>
+
+          </svg>
+          <figcaption><span class="fig-num">FIG 2</span>AskUserQuestion 完整交互时序 &mdash; 从 Claude 提问到用户在飞书回答</figcaption>
+        </figure>
+      </section>
+
+      <!-- ════════════════════════════════════════════════════ -->
+      <section>
+        <h2><span class="num">05</span>各模块职责速查</h2>
+
+        <h3>agents-remote-core/server/</h3>
+        <table>
+          <thead><tr><th>模块</th><th>职责</th></tr></thead>
+          <tbody>
+            <tr><td><code>server.py</code></td><td>PTY 创建、Unix socket 监听、消息路由（INPUT/RESIZE/PermissionResponse/QuestionResponse）、广播输出</td></tr>
+            <tr><td><code>hooks.py</code></td><td>HookHarness：生成 relay.sh/permission.sh、创建 FIFO、读取 hook 事件更新 HookState、写 response 文件。Claude 用 <code>--settings</code> 注入，Codex 合并到 <code>~/.codex/hooks.json</code></td></tr>
+            <tr><td><code>shared_state.py</code></td><td>SharedStateWriter/Reader：200MB mmap 文件读写，ClaudeWindow JSON 全量序列化</td></tr>
+            <tr><td><code>parsers/</code></td><td>claude_parser.py / codex_parser.py：终端屏幕 → 结构化 blocks（OutputBlock/UserInput/OptionBlock/StatusLine/...）</td></tr>
+          </tbody>
+        </table>
+
+        <h3>agents-remote/lark_client/</h3>
+        <table>
+          <thead><tr><th>模块</th><th>职责</th></tr></thead>
+          <tbody>
+            <tr><td><code>main.py</code></td><td>WebSocket 入口，事件分发，action 路由（select_option / hook_question / hook_question_toggle / hook_question_confirm / hook_permission / ...）</td></tr>
+            <tr><td><code>lark_handler.py</code></td><td>命令路由（/attach /list /kill ...）、会话管理、选项选择（箭头键导航 + hook 模式多问题收集）、bridge 管理</td></tr>
+            <tr><td><code>shared_memory_poller.py</code></td><td>每秒轮询 .mq → hash diff → 创建/更新/冻结卡片。hook/解析双模式轮次检测。就绪通知</td></tr>
+            <tr><td><code>card_builder.py</code></td><td>四层卡片结构渲染（内容区/状态区/交互区/菜单）。hook 模式按钮、多问题进度、多选 toggle</td></tr>
+            <tr><td><code>session_bridge.py</code></td><td>Unix socket 连接管理，send_input / send_raw / send_question_response / send_permission_response</td></tr>
+            <tr><td><code>card_service.py</code></td><td>飞书卡片 API 封装（create/update/send）</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- ════════════════════════════════════════════════════ -->
+      <section>
+        <h2><span class="num">06</span>Claude vs Codex 差异</h2>
+
+        <table>
+          <thead><tr><th>维度</th><th>Claude Code</th><th>Codex CLI</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Hook 注入</strong></td><td><code>--settings '{"hooks":...}'</code> 内联 JSON</td><td>合并到 <code>~/.codex/hooks.json</code>（文件发现）</td></tr>
+            <tr><td><strong>PermissionRequest</strong></td><td>通过 Notification + PermissionRequest 事件</td><td>独立 PermissionRequest 事件</td></tr>
+            <tr><td><strong>AskUserQuestion</strong></td><td>PreToolUse 双向拦截 → updatedInput.answers</td><td>不存在（Plan Mode 内建交互）</td></tr>
+            <tr><td><strong>终端解析器</strong></td><td>claude_parser.py（分割线 + 圆点 + 星号）</td><td>codex_parser.py（背景色区域 + <code>›</code> 提示符）</td></tr>
+            <tr><td><strong>Hook 清理</strong></td><td>无需（<code>--settings</code> 是进程级参数）</td><td>cleanup 时按标记从 hooks.json 移除注入项</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- ════════════════════════════════════════════════════ -->
+      <section>
+        <h2><span class="num">07</span>启动流程</h2>
+
+        <h3>方式 A：agents-remote CLI（当前）</h3>
+<pre><code>cla / cl / cx / cdx
+  → agent_remote.py cmd_start()
+    → tmux 新会话，运行 agents-remote/server/server.py（旧 server，无 hooks）
+    → agents-remote lark start（后台守护进程，WebSocket 连飞书）</code></pre>
+
+        <h3>方式 B：agents-remote-core server（需切换）</h3>
+<pre><code>agents-remote-core start &lt;session&gt;
+  → tmux 新会话，运行 agents-remote-core/server/server.py
+    → HookHarness 创建 FIFO + 脚本
+    → Claude/Codex CLI 带 --settings / hooks.json 启动
+    → HookState 写入 .mq 共享内存
+  → agents-remote lark start（读同一个 .mq，自动适配 hook_state 字段）</code></pre>
+
+        <div class="callout">
+          <div class="callout-label">要点</div>
+          两种方式的 lark 客户端完全相同——它只读 <code>.mq</code>，不关心是哪个 server 写的。差别仅在 server 端是否注入了 hooks。方式 B 下 <code>hook_state</code> 字段有值，lark 客户端自动走 hook 模式；方式 A 下该字段为 <code>None</code>，自动降级到终端解析模式。
+        </div>
+      </section>
+
+      <footer>
+        <h4>Key paths</h4>
+        <ul>
+          <li><code>/tmp/agents-remote/&lt;hash&gt;.mq</code> &mdash; 共享内存文件</li>
+          <li><code>/tmp/agents-remote/&lt;hash&gt;.sock</code> &mdash; Unix socket</li>
+          <li><code>/tmp/agents-remote/&lt;hash&gt;_hooks/</code> &mdash; FIFO + 脚本 + 响应文件</li>
+          <li><code>~/.agents-remote/</code> &mdash; 日志、绑定、配置</li>
+          <li><code>~/.codex/hooks.json</code> &mdash; Codex hook 配置（动态注入/清理）</li>
+        </ul>
+      </footer>
+
+    </article>
+  </body>
+</html>

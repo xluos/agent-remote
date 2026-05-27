@@ -267,13 +267,7 @@ def list_active_sessions() -> List[dict]:
                 # 读取 .mq 文件获取 cli_type
                 try:
                     import sys
-                    from pathlib import Path
-                    import logging
-                    project_root = str(Path(__file__).parent.parent)
-                    if project_root not in sys.path:
-                        sys.path.insert(0, project_root)
-                    from server.shared_state import SharedStateReader
-                    # 用 _BypassHashReader 直接传入 safe_name 避免二次哈希
+                    from .shared_state_reader import SharedStateReader
                     mq_path = SOCKET_DIR / f"{safe_name}.mq"
                     reader = SharedStateReader.__new__(SharedStateReader)
                     reader._path = mq_path

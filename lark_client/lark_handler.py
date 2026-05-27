@@ -607,9 +607,8 @@ class LarkHandler:
         """读取最新 blocks 并就地更新卡片为断开状态（disconnected=True）。返回是否成功。"""
         blocks = []
         try:
-            import sys as _sys
-            _sys.path.insert(0, str(Path(__file__).parent.parent / "server"))
-            from shared_state import SharedStateReader, get_mq_path
+            from utils.shared_state_reader import SharedStateReader
+            from utils.session import get_mq_path
             mq_path = get_mq_path(session_name)
             if mq_path.exists():
                 reader = SharedStateReader(session_name)
@@ -639,9 +638,8 @@ class LarkHandler:
         # 读取最后快照的 blocks
         blocks = []
         try:
-            import sys as _sys
-            _sys.path.insert(0, str(Path(__file__).parent.parent / "server"))
-            from shared_state import SharedStateReader, get_mq_path
+            from utils.shared_state_reader import SharedStateReader
+            from utils.session import get_mq_path
             mq_path = get_mq_path(session_name)
             if mq_path.exists():
                 reader = SharedStateReader(session_name)

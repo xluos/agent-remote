@@ -25,9 +25,7 @@ from typing import Dict, List, Optional, Any
 
 logger = logging.getLogger('SharedMemoryPoller')
 
-# 添加 server/ 目录到路径（访问 shared_state）
 _root = Path(__file__).parent.parent
-sys.path.insert(0, str(_root / "server"))
 sys.path.insert(0, str(_root))
 
 try:
@@ -220,7 +218,8 @@ class SharedMemoryPoller:
         # 步骤 1：延迟初始化 Reader
         if tracker.reader is None:
             try:
-                from shared_state import get_mq_path, SharedStateReader
+                from utils.shared_state_reader import SharedStateReader
+                from utils.session import get_mq_path
                 mq_path = get_mq_path(tracker.session_name)
                 if not mq_path.exists():
                     return
