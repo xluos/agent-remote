@@ -42,6 +42,8 @@ from utils.session import (
 
 # 获取脚本所在目录
 SCRIPT_DIR = Path(__file__).parent.absolute()
+# agents-remote-core 项目目录（PTY server runtime）
+CORE_DIR = SCRIPT_DIR.parent / "agents-remote-core"
 
 # 读取版本号（仅 import 时读取一次）
 try:
@@ -203,16 +205,10 @@ def cmd_start(args):
     with os.fdopen(env_fd, 'w') as f:
         json.dump(dict(os.environ), f)
 
-    # 构建 server 命令
-    server_script = SCRIPT_DIR / "server" / "server.py"
+    # 构建 server 命令（使用 agents-remote-core 作为 PTY server runtime）
     claude_args = args.claude_args if args.claude_args else []
 
     # S2 持久化：会话身份层负责续接 / 新建 claude 对话上下文
-    # 第一次起 → --session-id <uuid>，让 claude 用我们分配的 UUID 起新会话
-    # 后续起 → --resume <uuid>，跟之前对话续上
-    #
-    # 显式传 > 自动注入：如果用户在 claude_args 里已经传了 --session-id /
-    # --resume，agents-remote 不再注入，避免参数冲突
     _SESSION_ID_FLAGS = {"--session-id", "--resume"}
     user_provided_session_flag = any(
         arg in _SESSION_ID_FLAGS or any(arg.startswith(f + "=") for f in _SESSION_ID_FLAGS)
@@ -229,10 +225,8 @@ def cmd_start(args):
             from utils.session_id_map import claude_resume_args
             resume_args = claude_resume_args(session_name, cli_type_for_id)
             if resume_args:
-                # 注入到 claude_args 最前面（用户没传，自动接管）
                 claude_args = resume_args + list(claude_args)
         except Exception as _e:
-            # 映射文件损坏/不可读，降级到不 resume（用户体验仅退化一次）
             logging.getLogger('Start').warning(f"session_id_map 失败，继续起新会话: {_e}")
 
     claude_args_str = " ".join(f"'{arg}'" for arg in claude_args)
@@ -248,7 +242,14 @@ def cmd_start(args):
         if val:
             env_prefix += f"{key}='{val}' "
 
-    server_cmd = f"{env_prefix}uv run --project '{SCRIPT_DIR}' python3 '{server_script}'{debug_flag}{debug_verbose_flag}{cli_type_flag} -- '{session_name}' {claude_args_str}"
+    # 使用 agents-remote-core 的 server（带 hooks 能力），--data-dir 指向本项目的 SOCKET_DIR
+    from utils.session import SOCKET_DIR
+    server_cmd = (
+        f"{env_prefix}uv run --project '{CORE_DIR}' agents-remote-core"
+        f" --data-dir '{SOCKET_DIR}'"
+        f" start{debug_flag}{debug_verbose_flag}{cli_type_flag}"
+        f" '{session_name}' {claude_args_str}"
+    )
 
     # 配置启动日志（写文件 + stdout）
     _log_path = USER_DATA_DIR / "startup.log"
