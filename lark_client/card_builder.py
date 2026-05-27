@@ -630,6 +630,7 @@ def _determine_header(
     option_block: Optional[dict] = None,
     disconnected: bool = False,
     cli_type: str = "claude",
+    hook_state: Optional[dict] = None,
 ) -> tuple:
     """确定卡片标题和颜色模板，返回 (title, template)"""
     if disconnected:
@@ -637,6 +638,14 @@ def _determine_header(
 
     if is_frozen:
         return "📋 会话记录", "grey"
+
+    # hook 模式优先判定
+    if hook_state:
+        if hook_state.get("pending_permission"):
+            tool = hook_state["pending_permission"].get("tool_name", "")
+            return f"🔐 等待权限确认 · {tool}" if tool else "🔐 等待权限确认", "red"
+        if hook_state.get("pending_question"):
+            return "🤔 等待选择", "blue"
 
     has_streaming = any(b.get("is_streaming", False) for b in blocks)
 
@@ -683,6 +692,60 @@ def _extract_buttons(blocks: List[dict], option_block: Optional[dict] = None) ->
     return []
 
 
+def _build_hook_buttons(hook_state: dict) -> List[Dict[str, Any]]:
+    """从 hook_state 构建权限/问题按钮（替代 ANSI 解析的 OptionBlock 按钮）"""
+    elements = [{"tag": "hr"}]
+
+    pending_perm = hook_state.get("pending_permission")
+    if pending_perm:
+        req_id = pending_perm.get("request_id", "")
+        for decision, label, btn_type in [("allow", "✅ Allow", "primary"), ("deny", "❌ Deny", "danger")]:
+            elements.append({
+                "tag": "column_set", "flex_mode": "none",
+                "columns": [{"tag": "column", "width": "weighted", "weight": 1, "horizontal_align": "left",
+                    "elements": [{"tag": "button",
+                        "text": {"tag": "plain_text", "content": label},
+                        "type": btn_type,
+                        "behaviors": [{"type": "callback", "value": {
+                            "action": "hook_permission",
+                            "request_id": req_id,
+                            "decision": decision,
+                        }}],
+                    }],
+                }],
+            })
+        return elements
+
+    pending_q = hook_state.get("pending_question")
+    if pending_q:
+        req_id = pending_q.get("request_id", "")
+        questions = pending_q.get("questions", [])
+        if questions:
+            q = questions[0]
+            q_text = q.get("question", "")
+            options = q.get("options", [])
+            for i, opt in enumerate(options):
+                btn_type = "primary" if i == 0 else "default"
+                elements.append({
+                    "tag": "column_set", "flex_mode": "none",
+                    "columns": [{"tag": "column", "width": "weighted", "weight": 1, "horizontal_align": "left",
+                        "elements": [{"tag": "button",
+                            "text": {"tag": "plain_text", "content": f"{i+1}. {opt.get('label', '')}"},
+                            "type": btn_type,
+                            "behaviors": [{"type": "callback", "value": {
+                                "action": "hook_question",
+                                "request_id": req_id,
+                                "question": q_text,
+                                "answer": opt.get("label", ""),
+                            }}],
+                        }],
+                    }],
+                })
+        return elements
+
+    return []
+
+
 def build_stream_card(
     blocks: List[dict],
     status_line: Optional[dict] = None,
@@ -695,6 +758,7 @@ def build_stream_card(
     cli_type: str = "claude",
     status_only: bool = False,
     skip_tools: bool = False,
+    hook_state: Optional[dict] = None,
 ) -> Dict[str, Any]:
     """从共享内存 blocks 流构建飞书卡片
 
@@ -711,7 +775,7 @@ def build_stream_card(
     title, template = _determine_header(
         blocks, status_line, bottom_bar, is_frozen,
         option_block=option_block, disconnected=disconnected,
-        cli_type=cli_type,
+        cli_type=cli_type, hook_state=hook_state,
     )
 
     # === 第一层：内容区 ===
@@ -758,7 +822,8 @@ def build_stream_card(
 
 
     # === 第二层：状态区（仅非冻结且非断开时，column_set 灰色背景）===
-    if not is_frozen and not disconnected and (status_line or bottom_bar or agent_panel or option_block):
+    _has_hook_pending = hook_state and (hook_state.get("pending_permission") or hook_state.get("pending_question"))
+    if not is_frozen and not disconnected and (status_line or bottom_bar or agent_panel or option_block or _has_hook_pending):
         status_elements = []
         if status_line:
             ansi_raw = status_line.get('ansi_raw', '')
@@ -810,6 +875,27 @@ def build_stream_card(
                     ob_tag = option_block.get("tag", "")
                     ob_display = ob_question or ob_tag or "请选择"
                     status_elements.append({"tag": "markdown", "content": f"🤔 {_escape_md(ob_display)}"})
+        # hook_state 状态信息（仅在没有 option_block 时显示，避免重复）
+        if not option_block and hook_state:
+            pp = hook_state.get("pending_permission")
+            pq = hook_state.get("pending_question")
+            if pp:
+                if status_elements:
+                    status_elements.append({"tag": "hr"})
+                tool_name = pp.get("tool_name", "")
+                tool_input = pp.get("tool_input", {})
+                parts = [f"🔐 {_escape_md(tool_name)}"] if tool_name else ["🔐 权限确认"]
+                cmd = tool_input.get("command", "") or tool_input.get("file_path", "")
+                if cmd:
+                    parts.append(f"```\n{cmd}\n```")
+                status_elements.append({"tag": "markdown", "content": "\n".join(parts)})
+            elif pq:
+                if status_elements:
+                    status_elements.append({"tag": "hr"})
+                questions = pq.get("questions", [])
+                if questions:
+                    q_text = questions[0].get("question", "请选择")
+                    status_elements.append({"tag": "markdown", "content": f"🤔 {_escape_md(q_text)}"})
         if status_elements:
             elements.append({
                 "tag": "column_set",
@@ -825,9 +911,14 @@ def build_stream_card(
 
     # === 第三层：交互按钮区（仅非冻结且非断开时）===
     if not is_frozen and not disconnected:
-        buttons = _extract_buttons(blocks, option_block=option_block)
-        if buttons:
-            elements.extend(_build_buttons_v2(buttons))
+        # 优先使用 hook 模式按钮（无需箭头键导航，直接发消息响应）
+        hook_buttons = _build_hook_buttons(hook_state) if hook_state else []
+        if hook_buttons:
+            elements.extend(hook_buttons)
+        else:
+            buttons = _extract_buttons(blocks, option_block=option_block)
+            if buttons:
+                elements.extend(_build_buttons_v2(buttons))
 
     # === 第四层：菜单按钮（冻结卡只保留菜单入口，不渲染输入框/快捷键）===
     elements.append({"tag": "hr"})

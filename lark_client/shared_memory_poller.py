@@ -75,6 +75,8 @@ class StreamTracker:
     # 就绪状态去抖：首次检测到就绪的时间戳，连续保持超过阈值才确认
     # 初始设为 0.0（远早于当前时间），使首次 attach 到已就绪会话时立即确认
     ready_since: Optional[float] = 0.0
+    # hook 状态（来自 agents-remote-core 的 Claude Code hooks）
+    hook_state: Optional[dict] = None
 
 
 # ── 轮询器 ────────────────────────────────────────────────────────────────────
@@ -238,6 +240,7 @@ class SharedMemoryPoller:
         agent_panel = state.get("agent_panel")
         option_block = state.get("option_block")
         cli_type = state.get("cli_type", "claude")
+        tracker.hook_state = state.get("hook_state")
         # timestamp 存在说明 server 已写入有效快照（即使内容全空，如 Codex 就绪等待输入）
         has_valid_snapshot = state.get("timestamp") is not None
 
@@ -307,7 +310,7 @@ class SharedMemoryPoller:
 
         # 更新卡片
         from .card_builder import build_stream_card
-        card_dict = build_stream_card(blocks_slice, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type)
+        card_dict = build_stream_card(blocks_slice, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type, hook_state=tracker.hook_state)
 
         # 大小超限检查（与 blocks 数量超限同一套逻辑）
         card_size = len(json.dumps(card_dict, ensure_ascii=False).encode('utf-8'))
@@ -507,14 +510,14 @@ class SharedMemoryPoller:
         # 走到这里说明确实需要创建卡片（如 Codex 就绪等待输入的空内容卡片）
 
         from .card_builder import build_stream_card
-        card_dict = build_stream_card(blocks_slice, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type)
+        card_dict = build_stream_card(blocks_slice, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type, hook_state=tracker.hook_state)
 
         # 新卡大小检查：超限则从头部裁剪
         card_size = len(json.dumps(card_dict, ensure_ascii=False).encode('utf-8'))
         while card_size > CARD_SIZE_LIMIT and len(blocks_slice) > 1:
             blocks_slice = blocks_slice[1:]
             start_idx += 1
-            card_dict = build_stream_card(blocks_slice, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type)
+            card_dict = build_stream_card(blocks_slice, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type, hook_state=tracker.hook_state)
             card_size = len(json.dumps(card_dict, ensure_ascii=False).encode('utf-8'))
 
         card_id = await self._card_service.create_card(card_dict)
@@ -627,14 +630,14 @@ class SharedMemoryPoller:
         if not new_blocks:
             return
 
-        new_card_dict = build_stream_card(new_blocks, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type)
+        new_card_dict = build_stream_card(new_blocks, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type, hook_state=tracker.hook_state)
 
         # 新卡大小检查：超限则从头部裁剪
         new_card_size = len(json.dumps(new_card_dict, ensure_ascii=False).encode('utf-8'))
         while new_card_size > CARD_SIZE_LIMIT and len(new_blocks) > 1:
             new_blocks = new_blocks[1:]
             new_start += 1
-            new_card_dict = build_stream_card(new_blocks, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type)
+            new_card_dict = build_stream_card(new_blocks, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type, hook_state=tracker.hook_state)
             new_card_size = len(json.dumps(new_card_dict, ensure_ascii=False).encode('utf-8'))
 
         new_card_id = await self._card_service.create_card(new_card_dict)

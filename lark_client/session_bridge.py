@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.protocol import (
     Message, MessageType, InputMessage,
+    PermissionResponseMessage, QuestionResponseMessage,
     encode_message, decode_message
 )
 from utils.session import get_socket_path, generate_client_id, list_active_sessions
@@ -166,6 +167,34 @@ class SessionBridge:
             return True
         except Exception as e:
             logger.error(f"发送原始字节失败: {e}")
+            return False
+
+    async def send_permission_response(self, request_id: str, decision: str) -> bool:
+        """发送权限决策（hook 模式，替代箭头键导航）"""
+        if not self.writer or not self.running:
+            return False
+        try:
+            msg = PermissionResponseMessage(request_id, decision)
+            self.writer.write(encode_message(msg))
+            await self.writer.drain()
+            logger.info(f"发送权限决策: req={request_id} decision={decision}")
+            return True
+        except Exception as e:
+            logger.error(f"发送权限决策失败: {e}")
+            return False
+
+    async def send_question_response(self, request_id: str, answers: dict) -> bool:
+        """发送 AskUserQuestion 答案（hook 模式，替代箭头键导航）"""
+        if not self.writer or not self.running:
+            return False
+        try:
+            msg = QuestionResponseMessage(request_id, answers)
+            self.writer.write(encode_message(msg))
+            await self.writer.drain()
+            logger.info(f"发送问题答案: req={request_id} answers={list(answers.values())}")
+            return True
+        except Exception as e:
+            logger.error(f"发送问题答案失败: {e}")
             return False
 
     async def _read_loop(self):

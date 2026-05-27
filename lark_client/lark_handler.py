@@ -1208,6 +1208,34 @@ class LarkHandler:
         # 超过 max_steps 仍未到位，记录警告
         logger.warning(f"选项选择超步数: target={target}, steps={max_steps}")
 
+    # ── Hook 模式：权限 / 问题响应 ──────────────────────────────────────────────
+
+    async def handle_hook_permission(self, user_id: str, chat_id: str, request_id: str, decision: str):
+        """Hook 模式权限决策：直接发 PermissionResponseMessage，不走箭头键"""
+        logger.info(f"hook_permission: user={user_id[:8]}..., req={request_id}, decision={decision}")
+        bridge = await self._ensure_bridge(chat_id, user_id=user_id)
+        if not bridge:
+            await card_service.send_text(chat_id, "未连接到任何会话")
+            return
+        ok = await bridge.send_permission_response(request_id, decision)
+        if ok:
+            self._poller.kick(chat_id)
+        else:
+            await card_service.send_text(chat_id, "发送权限决策失败")
+
+    async def handle_hook_question(self, user_id: str, chat_id: str, request_id: str, question: str, answer: str):
+        """Hook 模式 AskUserQuestion 答案：直接发 QuestionResponseMessage，不走箭头键"""
+        logger.info(f"hook_question: user={user_id[:8]}..., req={request_id}, answer={answer}")
+        bridge = await self._ensure_bridge(chat_id, user_id=user_id)
+        if not bridge:
+            await card_service.send_text(chat_id, "未连接到任何会话")
+            return
+        ok = await bridge.send_question_response(request_id, {question: answer})
+        if ok:
+            self._poller.kick(chat_id)
+        else:
+            await card_service.send_text(chat_id, "发送问题答案失败")
+
     # ── 快捷键发送 ─────────────────────────────────────────────────────────────
 
     @staticmethod

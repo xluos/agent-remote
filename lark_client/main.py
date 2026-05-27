@@ -193,6 +193,23 @@ def handle_card_action(event: P2CardActionTrigger) -> P2CardActionTriggerRespons
             asyncio.create_task(handler.handle_option_select(user_id, chat_id, option_value, option_total, needs_input=needs_input))
             return None
 
+        # Hook 模式：权限决策（直接发消息，不走箭头键）
+        if action_type == "hook_permission":
+            req_id = action_value.get("request_id", "")
+            decision = action_value.get("decision", "deny")
+            print(f"[Lark] hook_permission: req={req_id} decision={decision}")
+            asyncio.create_task(handler.handle_hook_permission(user_id, chat_id, req_id, decision))
+            return None
+
+        # Hook 模式：AskUserQuestion 答案（直接发消息，不走箭头键）
+        if action_type == "hook_question":
+            req_id = action_value.get("request_id", "")
+            question = action_value.get("question", "")
+            answer = action_value.get("answer", "")
+            print(f"[Lark] hook_question: req={req_id} answer={answer}")
+            asyncio.create_task(handler.handle_hook_question(user_id, chat_id, req_id, question, answer))
+            return None
+
         # 列表卡片：进入会话
         if action_type == "list_attach":
             session_name = action_value.get("session", "")

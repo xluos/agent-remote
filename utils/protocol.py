@@ -19,6 +19,8 @@ class MessageType(str, Enum):
     HISTORY = "history"      # 历史输出（重连时）
     ERROR = "error"          # 错误消息
     RESIZE = "resize"        # 终端大小变化
+    PERMISSION_RESPONSE = "permission_response"  # 客户端 -> 服务端：权限决策
+    QUESTION_RESPONSE = "question_response"      # 客户端 -> 服务端：AskUserQuestion 答案
 
 
 @dataclass
@@ -44,6 +46,10 @@ class Message:
             return ErrorMessage.from_dict(obj)
         elif msg_type == MessageType.RESIZE:
             return ResizeMessage.from_dict(obj)
+        elif msg_type == MessageType.PERMISSION_RESPONSE:
+            return PermissionResponseMessage.from_dict(obj)
+        elif msg_type == MessageType.QUESTION_RESPONSE:
+            return QuestionResponseMessage.from_dict(obj)
         else:
             raise ValueError(f"Unknown message type: {msg_type}")
 
@@ -151,6 +157,61 @@ class ResizeMessage(Message):
         msg.rows = obj["rows"]
         msg.cols = obj["cols"]
         msg.client_id = obj["client_id"]
+        return msg
+
+
+@dataclass
+class PermissionResponseMessage(Message):
+    """权限决策消息（客户端 → 服务端）
+
+    消费端读到 hook_state.pending_permission 后，发此消息回复 allow/deny。
+    服务端收到后写响应文件，解除 permission.sh 的等待。
+    """
+    request_id: str
+    decision: str  # "allow" | "deny"
+
+    def __init__(self, request_id: str, decision: str):
+        super().__init__(type=MessageType.PERMISSION_RESPONSE)
+        self.request_id = request_id
+        self.decision = decision
+
+    @classmethod
+    def from_dict(cls, obj: dict) -> "PermissionResponseMessage":
+        msg = object.__new__(cls)
+        msg.type = obj["type"]
+        msg.request_id = obj["request_id"]
+        msg.decision = obj["decision"]
+        return msg
+
+
+@dataclass
+class QuestionResponseMessage(Message):
+    """AskUserQuestion 答案消息（客户端 → 服务端）
+
+    消费端读到 hook_state.pending_question 后，发此消息回复选择的答案。
+    服务端通过 PreToolUse 的 updatedInput.answers 注入答案，跳过交互 UI。
+    """
+    request_id: str
+    answers: dict  # {question_text: selected_option_label}
+
+    def __init__(self, request_id: str, answers: dict):
+        super().__init__(type=MessageType.QUESTION_RESPONSE)
+        self.request_id = request_id
+        self.answers = answers
+
+    def to_json(self) -> str:
+        return json.dumps({
+            "type": self.type,
+            "request_id": self.request_id,
+            "answers": self.answers,
+        }, ensure_ascii=False)
+
+    @classmethod
+    def from_dict(cls, obj: dict) -> "QuestionResponseMessage":
+        msg = object.__new__(cls)
+        msg.type = obj["type"]
+        msg.request_id = obj["request_id"]
+        msg.answers = obj["answers"]
         return msg
 
 
