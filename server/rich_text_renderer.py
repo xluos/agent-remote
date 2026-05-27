@@ -82,6 +82,7 @@ class _DimAwareScreen(pyte.HistoryScreen):
     """pyte.HistoryScreen 子类：
     1. SGR 2 (dim/faint) 映射为灰色前景
     2. 补充 SU/SD（ESC[nS/ESC[nT）滚动支持，滚出行保存到 history.top
+    3. soft-wrap 追踪：记录哪些行是因为到达右边界自动换行的（区别于 \\n 显式换行）
     """
 
     # dim 状态下使用的灰色（与终端 dim 效果近似）
@@ -91,6 +92,59 @@ class _DimAwareScreen(pyte.HistoryScreen):
     def __init__(self, columns, lines, **kwargs):
         kwargs.setdefault('history', self._DEFAULT_HISTORY)
         super().__init__(columns, lines, **kwargs)
+        # 被 auto-wrap 产生的行号集合（行 N 在集合中 = 行 N 是上一行 soft-wrap 的续行）
+        self.wrapped_lines: set = set()
+
+    def draw(self, data):
+        """覆写 draw：在 auto-wrap 发生时记录续行行号"""
+        data = data.translate(
+            self.g1_charset if self.charset else self.g0_charset)
+
+        from pyte import modes as mo
+        from wcwidth import wcwidth
+
+        for char in data:
+            char_width = wcwidth(char)
+
+            if self.cursor.x == self.columns:
+                if mo.DECAWM in self.mode:
+                    self.dirty.add(self.cursor.y)
+                    self.carriage_return()
+                    # 标记即将产生的下一行是 soft-wrap 续行
+                    next_line = self.cursor.y + 1
+                    self.linefeed()
+                    self.wrapped_lines.add(self.cursor.y)
+                elif char_width > 0:
+                    self.cursor.x -= char_width
+
+            if mo.IRM in self.mode and char_width > 0:
+                self.insert_characters(char_width)
+
+            line = self.buffer[self.cursor.y]
+            if char_width == 1:
+                line[self.cursor.x] = self.cursor.attrs._replace(data=char)
+            elif char_width == 2:
+                line[self.cursor.x] = self.cursor.attrs._replace(data=char)
+                if self.cursor.x + 1 < self.columns:
+                    line[self.cursor.x + 1] = self.cursor.attrs._replace(data=" ")
+
+            if char_width > 0:
+                self.cursor.x = min(self.cursor.x + char_width, self.columns)
+
+            self.dirty.add(self.cursor.y)
+
+    def linefeed(self):
+        """显式换行时清除目标行的 wrapped 标记（它不再是续行）"""
+        super().linefeed()
+
+    def reset(self):
+        super().reset()
+        self.wrapped_lines = set()
+
+    def erase_in_display(self, how=0, *args, **kwargs):
+        super().erase_in_display(how, *args, **kwargs)
+        if how == 2 or how == 3:
+            self.wrapped_lines.clear()
 
     def select_graphic_rendition(self, *attrs):
         # 检查是否包含 SGR 2 (dim)

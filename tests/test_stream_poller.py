@@ -416,14 +416,12 @@ class TestBuildStreamCard(unittest.TestCase):
         card = build_stream_card(blocks, is_frozen=True)
         self.assertEqual(card["header"]["template"], "grey")
         self.assertIn("会话记录", card["header"]["title"]["content"])
-        # 冻结卡片无状态区和按钮区
+        # 冻结卡片无状态区，仅有菜单按钮（裸 column_set，无 form/输入框）
         elements = card["body"]["elements"]
-        # 菜单行现在在 form 里，顶层应无裸 column_set
         col_sets = [e for e in elements if e.get("tag") == "column_set"]
-        self.assertEqual(len(col_sets), 0)  # 菜单已移入 form，无裸 column_set
-        # 应有 form 元素（菜单 + 输入框）
+        self.assertEqual(len(col_sets), 1)  # 仅菜单按钮
         forms = [e for e in elements if e.get("tag") == "form"]
-        self.assertEqual(len(forms), 1)
+        self.assertEqual(len(forms), 0)  # 冻结卡无 form
 
     def test_with_status_line(self):
         blocks = [{"_type": "OutputBlock", "content": "text", "indicator": "●", "is_streaming": True}]
@@ -829,6 +827,14 @@ class TestPollerPollOnce(unittest.TestCase):
         self.card_service.send_card = AsyncMock(return_value="msg_001")
         self.card_service.update_card = AsyncMock(return_value=True)
         self.poller = SharedMemoryPoller(self.card_service)
+        # 强制关闭简单模式，确保走标准流式卡片路径
+        import lark_client.shared_memory_poller as _smp
+        self._orig_simple = _smp._simple_mode_enabled
+        _smp._simple_mode_enabled = False
+
+    def tearDown(self):
+        import lark_client.shared_memory_poller as _smp
+        _smp._simple_mode_enabled = self._orig_simple
 
     def _make_reader(self, state: dict):
         reader = MagicMock()
@@ -1047,6 +1053,13 @@ class TestCardSizeLimit(unittest.TestCase):
         self.card_service.send_card = AsyncMock(return_value="msg_001")
         self.card_service.update_card = AsyncMock(return_value=True)
         self.poller = SharedMemoryPoller(self.card_service)
+        import lark_client.shared_memory_poller as _smp
+        self._orig_simple = _smp._simple_mode_enabled
+        _smp._simple_mode_enabled = False
+
+    def tearDown(self):
+        import lark_client.shared_memory_poller as _smp
+        _smp._simple_mode_enabled = self._orig_simple
 
     def _make_reader(self, state: dict):
         reader = MagicMock()

@@ -258,6 +258,39 @@ def _get_row_text(screen: pyte.Screen, row: int) -> str:
     return ''.join(buf).rstrip()
 
 
+def _join_block_lines(lines: list, rows: list, screen) -> str:
+    """智能拼接 block 内容行：soft-wrap 续行直接拼接，显式换行用 \\n
+
+    lines: 各行文本（已 rstrip）
+    rows:  对应的屏幕行号（与 lines 等长）
+    screen: pyte.Screen（可能有 wrapped_lines 属性）
+    """
+    wrapped = getattr(screen, 'wrapped_lines', set())
+    if not wrapped or not lines:
+        return '\n'.join(lines).rstrip()
+    parts = [lines[0]]
+    for i in range(1, len(lines)):
+        if rows[i] in wrapped:
+            parts.append(lines[i])
+        else:
+            parts.append('\n' + lines[i])
+    return ''.join(parts).rstrip()
+
+
+def _join_block_lines_pair(lines: list, ansi_lines: list, rows: list, screen) -> Tuple[str, str]:
+    """同时拼接纯文本和 ANSI 着色文本（保持对齐）"""
+    wrapped = getattr(screen, 'wrapped_lines', set())
+    if not wrapped or not lines:
+        return '\n'.join(lines).rstrip(), '\n'.join(ansi_lines).rstrip()
+    text_parts = [lines[0]]
+    ansi_parts = [ansi_lines[0]]
+    for i in range(1, len(lines)):
+        sep = '' if rows[i] in wrapped else '\n'
+        text_parts.append(sep + lines[i])
+        ansi_parts.append(sep + ansi_lines[i])
+    return ''.join(text_parts).rstrip(), ''.join(ansi_parts).rstrip()
+
+
 def _is_dim_fg(fg_color: str) -> bool:
     """判断前景色是否为灰色/暗色（placeholder 风格）。"""
     if not fg_color or fg_color == 'default':
@@ -687,9 +720,10 @@ class ClaudeParser(BaseParser):
             # 则本次 dot 消失（如 ctrl+o 重绘）不应误判为 streaming
             first_content = cached_first_line[1:].strip() if cached_first_line else ''
             body_lines = [_get_row_text(screen, r) for r in block_rows[1:]]
-            content = '\n'.join([first_content] + body_lines).rstrip()
             ansi_body_lines = [_get_row_ansi_text(screen, r) for r in block_rows[1:]]
-            ansi_content = '\n'.join([cached_ansi_first] + ansi_body_lines).rstrip()
+            content, ansi_content = _join_block_lines_pair(
+                [first_content] + body_lines, [cached_ansi_first] + ansi_body_lines,
+                block_rows, screen)
             content, ansi_content = _strip_inline_boxes_pair(content, ansi_content)
             return OutputBlock(
                 content=content, is_streaming=cached_blink, start_row=first_row,
@@ -770,8 +804,10 @@ class ClaudeParser(BaseParser):
                 )
             first_content = lines[0][1:].strip()
             body_lines = lines[1:]
-            content = '\n'.join([first_content] + body_lines).rstrip()
-            ansi_content = '\n'.join([ansi_first] + ansi_body).rstrip()
+            all_lines = [first_content] + body_lines
+            all_rows = block_rows  # block_rows[0] 对应 first_content，其余对应 body_lines
+            content, ansi_content = _join_block_lines_pair(
+                all_lines, [ansi_first] + ansi_body, all_rows, screen)
             content, ansi_content = _strip_inline_boxes_pair(content, ansi_content)
             return OutputBlock(
                 content=content, is_streaming=is_blink, start_row=first_row,
@@ -856,10 +892,11 @@ class ClaudeParser(BaseParser):
         ansi_ind = _get_col0_ansi(screen, first_row)
         first_content = lines[0][1:].strip()
         body_lines = lines[1:]
-        content = '\n'.join([first_content] + body_lines).rstrip()
         ansi_first = _get_row_ansi_text(screen, first_row, start_col=1).strip()
         ansi_body = [_get_row_ansi_text(screen, r) for r in block_rows[1:]]
-        ansi_content = '\n'.join([ansi_first] + ansi_body).rstrip()
+        content, ansi_content = _join_block_lines_pair(
+            [first_content] + body_lines, [ansi_first] + ansi_body,
+            block_rows, screen)
         return SystemBlock(
             content=content,
             start_row=first_row,

@@ -87,6 +87,8 @@ class LarkHandler:
         self._detached_slices: Dict[str, CardSlice] = {}
         # 正在启动中的会话名集合（防止并发点击触发竞态）
         self._starting_sessions: set = set()
+        # hook 多问题作答进度：chat_id → {request_id, current_index, answers, selections}
+        self._hook_progress: Dict[str, dict] = {}
         # Session 健康检查后台任务
         self._health_check_task: Optional[asyncio.Task] = None
         logger.info(
@@ -1223,16 +1225,127 @@ class LarkHandler:
         else:
             await card_service.send_text(chat_id, "发送权限决策失败")
 
-    async def handle_hook_question(self, user_id: str, chat_id: str, request_id: str, question: str, answer: str):
-        """Hook 模式 AskUserQuestion 答案：直接发 QuestionResponseMessage，不走箭头键"""
-        logger.info(f"hook_question: user={user_id[:8]}..., req={request_id}, answer={answer}")
-        bridge = await self._ensure_bridge(chat_id, user_id=user_id)
-        if not bridge:
-            await card_service.send_text(chat_id, "未连接到任何会话")
+    async def handle_hook_question(self, user_id: str, chat_id: str, request_id: str,
+                                   answer: str, *, question_index: int = 0):
+        """Hook 模式 AskUserQuestion 单选答案：记录答案并推进到下一题或提交"""
+        logger.info(f"hook_question: user={user_id[:8]}..., req={request_id}, idx={question_index}, answer={answer}")
+
+        # 获取当前 hook_state 中的问题列表
+        tracker = self._poller._trackers.get(chat_id)
+        if not tracker or not tracker.hook_state:
+            await card_service.send_text(chat_id, "问题已过期或不存在")
             return
-        ok = await bridge.send_question_response(request_id, {question: answer})
+        pq = tracker.hook_state.get("pending_question", {})
+        questions = pq.get("questions", [])
+        if not questions:
+            return
+
+        # 初始化或获取进度
+        progress = self._hook_progress.get(chat_id)
+        if not progress or progress.get("request_id") != request_id:
+            progress = {"request_id": request_id, "current_index": 0, "answers": {}, "selections": {}}
+            self._hook_progress[chat_id] = progress
+
+        q_text = questions[question_index].get("question", "")
+        progress["answers"][q_text] = answer
+        progress["current_index"] = question_index + 1
+
+        if progress["current_index"] >= len(questions):
+            await self._send_hook_response(chat_id, request_id, questions, progress["answers"])
+            self._hook_progress.pop(chat_id, None)
+            self._poller.set_hook_progress(chat_id, None)
+        else:
+            self._poller.set_hook_progress(chat_id, progress)
+
+        self._poller.kick(chat_id)
+
+    async def handle_hook_question_toggle(self, user_id: str, chat_id: str,
+                                          request_id: str, question_index: int, option_label: str):
+        """Hook 模式 AskUserQuestion 多选 toggle：切换选中状态"""
+        logger.info(f"hook_toggle: user={user_id[:8]}..., req={request_id}, idx={question_index}, opt={option_label}")
+
+        tracker = self._poller._trackers.get(chat_id)
+        if not tracker or not tracker.hook_state:
+            return
+        pq = tracker.hook_state.get("pending_question", {})
+        questions = pq.get("questions", [])
+        if question_index >= len(questions):
+            return
+
+        progress = self._hook_progress.get(chat_id)
+        if not progress or progress.get("request_id") != request_id:
+            progress = {"request_id": request_id, "current_index": question_index, "answers": {}, "selections": {}}
+            self._hook_progress[chat_id] = progress
+
+        q_text = questions[question_index].get("question", "")
+        sel = set(progress["selections"].get(q_text, []))
+        if option_label in sel:
+            sel.discard(option_label)
+        else:
+            sel.add(option_label)
+        progress["selections"][q_text] = list(sel)
+
+        self._poller.set_hook_progress(chat_id, progress)
+        self._poller.kick(chat_id)
+
+    async def handle_hook_question_confirm(self, user_id: str, chat_id: str,
+                                           request_id: str, question_index: int):
+        """Hook 模式 AskUserQuestion 多选确认：将当前勾选提交为答案，推进到下一题"""
+        logger.info(f"hook_confirm: user={user_id[:8]}..., req={request_id}, idx={question_index}")
+
+        tracker = self._poller._trackers.get(chat_id)
+        if not tracker or not tracker.hook_state:
+            return
+        pq = tracker.hook_state.get("pending_question", {})
+        questions = pq.get("questions", [])
+        if question_index >= len(questions):
+            return
+
+        progress = self._hook_progress.get(chat_id)
+        if not progress or progress.get("request_id") != request_id:
+            progress = {"request_id": request_id, "current_index": question_index, "answers": {}, "selections": {}}
+            self._hook_progress[chat_id] = progress
+
+        q_text = questions[question_index].get("question", "")
+        selected = list(progress.get("selections", {}).get(q_text, []))
+        progress["answers"][q_text] = selected
+        progress["selections"].pop(q_text, None)
+        progress["current_index"] = question_index + 1
+
+        if progress["current_index"] >= len(questions):
+            await self._send_hook_response(chat_id, request_id, questions, progress["answers"])
+            self._hook_progress.pop(chat_id, None)
+            self._poller.set_hook_progress(chat_id, None)
+        else:
+            self._poller.set_hook_progress(chat_id, progress)
+
+        self._poller.kick(chat_id)
+
+    async def _send_hook_response(self, chat_id: str, request_id: str,
+                                  questions: list, answers: dict):
+        """通过 Unix socket 发送 QuestionResponseMessage 给 server（server 再写 response 文件）"""
+        bridge = self._bridges.get(chat_id)
+        if not bridge:
+            logger.warning(f"无法发送 hook response: chat_id={chat_id[:8]} 无 bridge")
+            return
+
+        # 构建 Claude CLI 期望的 answers 数组格式
+        answers_array = []
+        for i, q in enumerate(questions):
+            q_text = q.get("question", "")
+            ans = answers.get(q_text)
+            if ans is None:
+                continue
+            multi = q.get("multiSelect", False)
+            if multi:
+                selected = ans if isinstance(ans, list) else [ans]
+                answers_array.append({"question": i, "selectedOptions": selected})
+            else:
+                answers_array.append({"question": i, "selectedOption": ans})
+
+        ok = await bridge.send_question_response(request_id, answers_array)
         if ok:
-            self._poller.kick(chat_id)
+            logger.info(f"hook response 已发送: req={request_id}, answers={len(answers_array)}")
         else:
             await card_service.send_text(chat_id, "发送问题答案失败")
 

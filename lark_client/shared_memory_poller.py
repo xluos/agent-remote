@@ -75,8 +75,12 @@ class StreamTracker:
     # 就绪状态去抖：首次检测到就绪的时间戳，连续保持超过阈值才确认
     # 初始设为 0.0（远早于当前时间），使首次 attach 到已就绪会话时立即确认
     ready_since: Optional[float] = 0.0
-    # hook 状态（来自 agents-remote-core 的 Claude Code hooks）
+    # hook 状态（来自 agents-remote-core HookHarness）
     hook_state: Optional[dict] = None
+    # hook 多问题作答进度（由 lark_handler 维护）
+    hook_progress: Optional[dict] = None
+    # hook 模式轮次跟踪：上一帧 turn_complete 值（用于检测 True→False 翻转 = 新轮次开始）
+    prev_turn_complete: bool = True
 
 
 # ── 轮询器 ────────────────────────────────────────────────────────────────────
@@ -240,6 +244,7 @@ class SharedMemoryPoller:
         agent_panel = state.get("agent_panel")
         option_block = state.get("option_block")
         cli_type = state.get("cli_type", "claude")
+        # hook_state 由 agents-remote-core server 的 HookHarness 写入共享内存
         tracker.hook_state = state.get("hook_state")
         # timestamp 存在说明 server 已写入有效快照（即使内容全空，如 Codex 就绪等待输入）
         has_valid_snapshot = state.get("timestamp") is not None
@@ -304,13 +309,13 @@ class SharedMemoryPoller:
             return
 
         # hash diff
-        new_hash = self._compute_hash(blocks_slice, status_line, bottom_bar, agent_panel, option_block)
+        new_hash = self._compute_hash(blocks_slice, status_line, bottom_bar, agent_panel, option_block, tracker.hook_state, tracker.hook_progress)
         if new_hash == tracker.content_hash:
             return  # 无变化
 
         # 更新卡片
         from .card_builder import build_stream_card
-        card_dict = build_stream_card(blocks_slice, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type, hook_state=tracker.hook_state)
+        card_dict = build_stream_card(blocks_slice, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type, hook_state=tracker.hook_state, hook_progress=tracker.hook_progress)
 
         # 大小超限检查（与 blocks 数量超限同一套逻辑）
         card_size = len(json.dumps(card_dict, ensure_ascii=False).encode('utf-8'))
@@ -358,6 +363,41 @@ class SharedMemoryPoller:
             f"seq={active.sequence} hash={new_hash[:8]}"
         )
 
+    def _detect_new_round_hook(self, tracker: StreamTracker, blocks: List[dict]) -> tuple:
+        """hook 模式轮次检测：turn_complete True→False 翻转 = 新轮次开始
+
+        Returns: (is_new_round, round_start)
+        """
+        hs = tracker.hook_state or {}
+        cur_complete = hs.get("turn_complete", False)
+        was_complete = tracker.prev_turn_complete
+        tracker.prev_turn_complete = cur_complete
+
+        # True → False 翻转：Claude 从就绪进入新一轮执行
+        if was_complete and not cur_complete:
+            # 找最后一个 UserInput 作为轮次起点
+            for i in range(len(blocks) - 1, -1, -1):
+                if blocks[i].get("_type") == "UserInput":
+                    return True, i
+            return True, max(0, len(blocks) - 1)
+
+        return False, 0
+
+    def _detect_new_round_parse(self, tracker: StreamTracker, blocks: List[dict]) -> tuple:
+        """解析模式轮次检测：新 UserInput block_id 出现 = 新轮次
+
+        Returns: (is_new_round, round_start, user_bid)
+        """
+        user_bid: Optional[str] = None
+        round_start = 0
+        for i in range(len(blocks) - 1, -1, -1):
+            if blocks[i].get("_type") == "UserInput":
+                round_start = i
+                user_bid = blocks[i].get("block_id") or f"idx{i}"
+                break
+        is_new = user_bid != tracker.simple_last_user_bid
+        return is_new, round_start, user_bid
+
     async def _do_card_update_simple(
         self, tracker: StreamTracker, blocks: List[dict],
         status_line: Optional[dict], bottom_bar: Optional[dict],
@@ -367,28 +407,26 @@ class SharedMemoryPoller:
     ) -> None:
         """简单模式卡片更新：每轮一张独立卡片，工具调用折叠
 
-        - 以最后一个 UserInput 为本轮起点；出现新的 UserInput → 冻结上一张卡、开新卡
-        - 始终渲染内容（skip_tools=True）：文本完整显示，工具 block 直接跳过不渲染
-        - 不依赖 ready 状态控制显示（ready 仅用于通知）
+        轮次切换检测分两种模式：
+        - hook 模式（hook_state 存在）：turn_complete True→False 翻转 = 新轮次
+        - 解析模式（hook_state 为 None）：新 UserInput block_id 出现 = 新轮次
         """
         from .card_builder import build_stream_card
 
         if not blocks and not status_line and not option_block and not has_valid_snapshot:
             return
 
-        # 找本轮起点（最后一个 UserInput），无则本轮从 0 开始
-        round_start = 0
-        user_bid: Optional[str] = None
-        for i in range(len(blocks) - 1, -1, -1):
-            if blocks[i].get("_type") == "UserInput":
-                round_start = i
-                user_bid = blocks[i].get("block_id") or f"idx{i}"
-                break
-
         active = tracker.cards[-1] if tracker.cards else None
 
-        # 新一轮检测：出现新的 UserInput → 冻结旧卡 + 开新卡
-        if user_bid != tracker.simple_last_user_bid:
+        # 新一轮检测：区分 hook 模式和解析模式
+        if tracker.hook_state is not None:
+            is_new_round, round_start = self._detect_new_round_hook(tracker, blocks)
+        else:
+            is_new_round, round_start, user_bid = self._detect_new_round_parse(tracker, blocks)
+            if is_new_round:
+                tracker.simple_last_user_bid = user_bid
+
+        if is_new_round:
             if active is not None and not active.frozen:
                 old_blocks = blocks[active.start_idx:round_start]
                 frozen_card = build_stream_card(
@@ -403,10 +441,9 @@ class SharedMemoryPoller:
                                  chat_id=tracker.chat_id)
                 except Exception as e:
                     logger.warning(f"[simple] 冻结旧卡失败: {e}")
-            tracker.simple_last_user_bid = user_bid
             tracker.simple_round_start = round_start
             tracker.content_hash = ""
-            active = None  # 强制开新卡
+            active = None
 
         # blocks 骤降保护（compact/重启导致 blocks 从头累积）
         if tracker.simple_round_start > len(blocks):
@@ -425,6 +462,7 @@ class SharedMemoryPoller:
             agent_panel=agent_panel, option_block=option_block,
             session_name=tracker.session_name, cli_type=cli_type,
             skip_tools=True,
+            hook_state=tracker.hook_state, hook_progress=tracker.hook_progress,
         )
 
         # 超限裁剪：从头删减本轮 blocks
@@ -438,10 +476,11 @@ class SharedMemoryPoller:
                 agent_panel=agent_panel, option_block=option_block,
                 session_name=tracker.session_name, cli_type=cli_type,
                 skip_tools=True,
+                hook_state=tracker.hook_state, hook_progress=tracker.hook_progress,
             )
             card_size = len(json.dumps(card_dict, ensure_ascii=False).encode('utf-8'))
 
-        new_hash = self._compute_hash(blocks_slice, status_line, bottom_bar, agent_panel, option_block)
+        new_hash = self._compute_hash(blocks_slice, status_line, bottom_bar, agent_panel, option_block, tracker.hook_state, tracker.hook_progress)
 
         if active is None:
             # 创建本轮新卡
@@ -510,14 +549,14 @@ class SharedMemoryPoller:
         # 走到这里说明确实需要创建卡片（如 Codex 就绪等待输入的空内容卡片）
 
         from .card_builder import build_stream_card
-        card_dict = build_stream_card(blocks_slice, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type, hook_state=tracker.hook_state)
+        card_dict = build_stream_card(blocks_slice, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type, hook_state=tracker.hook_state, hook_progress=tracker.hook_progress)
 
         # 新卡大小检查：超限则从头部裁剪
         card_size = len(json.dumps(card_dict, ensure_ascii=False).encode('utf-8'))
         while card_size > CARD_SIZE_LIMIT and len(blocks_slice) > 1:
             blocks_slice = blocks_slice[1:]
             start_idx += 1
-            card_dict = build_stream_card(blocks_slice, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type, hook_state=tracker.hook_state)
+            card_dict = build_stream_card(blocks_slice, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type, hook_state=tracker.hook_state, hook_progress=tracker.hook_progress)
             card_size = len(json.dumps(card_dict, ensure_ascii=False).encode('utf-8'))
 
         card_id = await self._card_service.create_card(card_dict)
@@ -525,7 +564,7 @@ class SharedMemoryPoller:
         if card_id:
             await self._card_service.send_card(tracker.chat_id, card_id)
             tracker.cards.append(CardSlice(card_id=card_id, start_idx=start_idx))
-            tracker.content_hash = self._compute_hash(blocks_slice, status_line, bottom_bar, agent_panel, option_block)
+            tracker.content_hash = self._compute_hash(blocks_slice, status_line, bottom_bar, agent_panel, option_block, tracker.hook_state, tracker.hook_progress)
             _track_stats('card', 'create', session_name=tracker.session_name,
                          chat_id=tracker.chat_id)
             logger.info(
@@ -566,12 +605,13 @@ class SharedMemoryPoller:
             agent_panel=agent_panel, option_block=option_block,
             session_name=tracker.session_name,
             cli_type=cli_type,
+            hook_state=tracker.hook_state, hook_progress=tracker.hook_progress,
         )
         new_card_id = await self._card_service.create_card(new_card_dict)
         if new_card_id:
             await self._card_service.send_card(tracker.chat_id, new_card_id)
             tracker.cards.append(CardSlice(card_id=new_card_id, start_idx=new_start))
-            tracker.content_hash = self._compute_hash(new_blocks, status_line, bottom_bar, agent_panel, option_block)
+            tracker.content_hash = self._compute_hash(new_blocks, status_line, bottom_bar, agent_panel, option_block, tracker.hook_state, tracker.hook_progress)
             _track_stats('card', 'create', session_name=tracker.session_name,
                          chat_id=tracker.chat_id)
             logger.info(
@@ -630,21 +670,21 @@ class SharedMemoryPoller:
         if not new_blocks:
             return
 
-        new_card_dict = build_stream_card(new_blocks, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type, hook_state=tracker.hook_state)
+        new_card_dict = build_stream_card(new_blocks, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type, hook_state=tracker.hook_state, hook_progress=tracker.hook_progress)
 
         # 新卡大小检查：超限则从头部裁剪
         new_card_size = len(json.dumps(new_card_dict, ensure_ascii=False).encode('utf-8'))
         while new_card_size > CARD_SIZE_LIMIT and len(new_blocks) > 1:
             new_blocks = new_blocks[1:]
             new_start += 1
-            new_card_dict = build_stream_card(new_blocks, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type, hook_state=tracker.hook_state)
+            new_card_dict = build_stream_card(new_blocks, status_line, bottom_bar, agent_panel=agent_panel, option_block=option_block, session_name=tracker.session_name, cli_type=cli_type, hook_state=tracker.hook_state, hook_progress=tracker.hook_progress)
             new_card_size = len(json.dumps(new_card_dict, ensure_ascii=False).encode('utf-8'))
 
         new_card_id = await self._card_service.create_card(new_card_dict)
         if new_card_id:
             await self._card_service.send_card(tracker.chat_id, new_card_id)
             tracker.cards.append(CardSlice(card_id=new_card_id, start_idx=new_start))
-            tracker.content_hash = self._compute_hash(new_blocks, status_line, bottom_bar, agent_panel, option_block)
+            tracker.content_hash = self._compute_hash(new_blocks, status_line, bottom_bar, agent_panel, option_block, tracker.hook_state, tracker.hook_progress)
             logger.info(
                 f"[NEW after FREEZE] session={tracker.session_name} start_idx={new_start} "
                 f"blocks={len(new_blocks)} card_id={new_card_id}"
@@ -660,12 +700,22 @@ class SharedMemoryPoller:
     ) -> bool:
         """更新就绪状态（含去抖），返回是否需要发送就绪通知（不执行发送）
 
-        去抖逻辑：_is_ready() 首次返回 True 时开始计时，连续保持超过
-        READY_DEBOUNCE 秒才确认为真正就绪。中途变 False 则重置计时器。
-        option_block 存在时跳过去抖（需立即展开交互按钮）。
+        两种模式：
+        - hook 模式：直接用 turn_complete（权威信号），pending 状态时抑制
+        - 解析模式：_is_ready() 启发式 + 去抖
         """
-        raw_ready = _is_ready(blocks, status_line, option_block, agent_panel)
+        hs = tracker.hook_state
         now = time.time()
+
+        if hs is not None:
+            # hook 模式：turn_complete 是权威就绪信号
+            if hs.get("pending_question") or hs.get("pending_permission") or hs.get("waiting_permission"):
+                tracker.prev_is_ready = False
+                return False
+            raw_ready = bool(hs.get("turn_complete", False))
+        else:
+            # 解析模式：启发式判断
+            raw_ready = _is_ready(blocks, status_line, option_block, agent_panel)
 
         if raw_ready:
             if tracker.ready_since is None:
@@ -675,6 +725,9 @@ class SharedMemoryPoller:
 
         # option_block 在场时跳过去抖（用户需要立即看到选项按钮）
         if option_block is not None:
+            confirmed = raw_ready
+        elif hs is not None:
+            # hook 模式：turn_complete 已经是确定信号，不需要去抖
             confirmed = raw_ready
         else:
             confirmed = (
@@ -780,11 +833,19 @@ class SharedMemoryPoller:
         _save_simple_mode(enabled)
         logger.info(f"简单模式开关已{'开启' if enabled else '关闭'}")
 
+    def set_hook_progress(self, chat_id: str, progress: Optional[dict]) -> None:
+        """由 lark_handler 调用，更新多问题作答进度"""
+        tracker = self._trackers.get(chat_id)
+        if tracker:
+            tracker.hook_progress = progress
+
     @staticmethod
     def _compute_hash(
         blocks: list, status_line: Optional[dict],
         bottom_bar: Optional[dict], agent_panel: Optional[dict] = None,
         option_block: Optional[dict] = None,
+        hook_state: Optional[dict] = None,
+        hook_progress: Optional[dict] = None,
     ) -> str:
         """计算内容 hash（用于 diff）"""
         data = {
@@ -793,6 +854,8 @@ class SharedMemoryPoller:
             "bottom_bar": bottom_bar,
             "agent_panel": agent_panel,
             "option_block": option_block,
+            "hook_state": hook_state,
+            "hook_progress": hook_progress,
         }
         return hashlib.md5(
             json.dumps(data, ensure_ascii=False, sort_keys=True).encode()

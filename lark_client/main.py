@@ -201,13 +201,36 @@ def handle_card_action(event: P2CardActionTrigger) -> P2CardActionTriggerRespons
             asyncio.create_task(handler.handle_hook_permission(user_id, chat_id, req_id, decision))
             return None
 
-        # Hook 模式：AskUserQuestion 答案（直接发消息，不走箭头键）
+        # Hook 模式：AskUserQuestion 单选答案
         if action_type == "hook_question":
             req_id = action_value.get("request_id", "")
-            question = action_value.get("question", "")
             answer = action_value.get("answer", "")
-            print(f"[Lark] hook_question: req={req_id} answer={answer}")
-            asyncio.create_task(handler.handle_hook_question(user_id, chat_id, req_id, question, answer))
+            q_idx = int(action_value.get("question_index", "0"))
+            print(f"[Lark] hook_question: req={req_id} idx={q_idx} answer={answer}")
+            asyncio.create_task(handler.handle_hook_question(
+                user_id, chat_id, req_id, answer, question_index=q_idx
+            ))
+            return None
+
+        # Hook 模式：AskUserQuestion 多选 toggle
+        if action_type == "hook_question_toggle":
+            req_id = action_value.get("request_id", "")
+            q_idx = int(action_value.get("question_index", "0"))
+            opt_label = action_value.get("option_label", "")
+            print(f"[Lark] hook_toggle: req={req_id} idx={q_idx} opt={opt_label}")
+            asyncio.create_task(handler.handle_hook_question_toggle(
+                user_id, chat_id, req_id, q_idx, opt_label
+            ))
+            return None
+
+        # Hook 模式：AskUserQuestion 多选确认
+        if action_type == "hook_question_confirm":
+            req_id = action_value.get("request_id", "")
+            q_idx = int(action_value.get("question_index", "0"))
+            print(f"[Lark] hook_confirm: req={req_id} idx={q_idx}")
+            asyncio.create_task(handler.handle_hook_question_confirm(
+                user_id, chat_id, req_id, q_idx
+            ))
             return None
 
         # 列表卡片：进入会话

@@ -631,6 +631,7 @@ def _determine_header(
     disconnected: bool = False,
     cli_type: str = "claude",
     hook_state: Optional[dict] = None,
+    hook_progress: Optional[dict] = None,
 ) -> tuple:
     """确定卡片标题和颜色模板，返回 (title, template)"""
     if disconnected:
@@ -639,14 +640,47 @@ def _determine_header(
     if is_frozen:
         return "📋 会话记录", "grey"
 
-    # hook 模式优先判定
+    # hook 模式优先判定（权威信号，优先于解析启发式）
     if hook_state:
         if hook_state.get("pending_permission"):
             tool = hook_state["pending_permission"].get("tool_name", "")
             return f"🔐 等待权限确认 · {tool}" if tool else "🔐 等待权限确认", "red"
-        if hook_state.get("pending_question"):
+        if hook_state.get("waiting_permission"):
+            return "🔐 等待权限确认", "red"
+        pq = hook_state.get("pending_question")
+        if pq:
+            questions = pq.get("questions", [])
+            total = len(questions)
+            if total > 1 and hook_progress:
+                idx = hook_progress.get("current_index", 0) + 1
+                return f"🤔 等待选择 ({idx}/{total})", "blue"
             return "🤔 等待选择", "blue"
+        if hook_state.get("turn_complete"):
+            cli_name = CLI_NAMES.get(cli_type, "Claude")
+            return f"✅ {cli_name} 就绪", "green"
+        # hook 存在但未 turn_complete → 执行中，用 active_tool 细化
+        active_tool = hook_state.get("active_tool", "")
+        if active_tool:
+            # 有 status_line 时仍用解析的详细进度信息
+            if status_line:
+                action = status_line.get('action', active_tool)
+                elapsed = status_line.get('elapsed', '')
+                tokens = status_line.get('tokens', '')
+                stats_parts = [p for p in [elapsed, tokens] if p]
+                stats_str = f" ({' · '.join(stats_parts)})" if stats_parts else ""
+                return f"⏳ {action}{stats_str}", "orange"
+            return f"⏳ {active_tool}", "orange"
+        # hook 存在，无 active_tool，未 turn_complete → 正在处理
+        if status_line:
+            action = status_line.get('action', '处理中...')
+            elapsed = status_line.get('elapsed', '')
+            tokens = status_line.get('tokens', '')
+            stats_parts = [p for p in [elapsed, tokens] if p]
+            stats_str = f" ({' · '.join(stats_parts)})" if stats_parts else ""
+            return f"⏳ {action}{stats_str}", "orange"
+        return "⏳ 处理中...", "orange"
 
+    # ── 解析模式（无 hook_state）──────────────────────────
     has_streaming = any(b.get("is_streaming", False) for b in blocks)
 
     if has_streaming or status_line:
@@ -692,8 +726,12 @@ def _extract_buttons(blocks: List[dict], option_block: Optional[dict] = None) ->
     return []
 
 
-def _build_hook_buttons(hook_state: dict) -> List[Dict[str, Any]]:
-    """从 hook_state 构建权限/问题按钮（替代 ANSI 解析的 OptionBlock 按钮）"""
+def _build_hook_buttons(hook_state: dict, hook_progress: Optional[dict] = None) -> List[Dict[str, Any]]:
+    """从 hook_state 构建权限/问题按钮（替代 ANSI 解析的 OptionBlock 按钮）
+
+    多问题支持：按 hook_progress.current_index 显示当前问题，已答题以摘要形式呈现
+    多选支持：hook_progress.selections 跟踪当前勾选状态，显示 toggle 按钮 + 确认按钮
+    """
     elements = [{"tag": "hr"}]
 
     pending_perm = hook_state.get("pending_permission")
@@ -720,27 +758,112 @@ def _build_hook_buttons(hook_state: dict) -> List[Dict[str, Any]]:
     if pending_q:
         req_id = pending_q.get("request_id", "")
         questions = pending_q.get("questions", [])
-        if questions:
-            q = questions[0]
-            q_text = q.get("question", "")
-            options = q.get("options", [])
-            for i, opt in enumerate(options):
-                btn_type = "primary" if i == 0 else "default"
+        if not questions:
+            return []
+
+        total = len(questions)
+        current_index = 0
+        answers = {}
+        selections = {}
+        if hook_progress and hook_progress.get("request_id") == req_id:
+            current_index = hook_progress.get("current_index", 0)
+            answers = hook_progress.get("answers", {})
+            selections = hook_progress.get("selections", {})
+
+        # 已答题摘要
+        for i in range(min(current_index, total)):
+            q = questions[i]
+            header = q.get("header", "")
+            ans = answers.get(q.get("question", ""), "")
+            if isinstance(ans, list):
+                ans = ", ".join(ans)
+            label = f"{header}: {ans}" if header else ans
+            elements.append({"tag": "markdown", "content": f"\\✅ {_escape_md(label)}"})
+
+        if current_index >= total:
+            return elements
+
+        # 当前问题
+        q = questions[current_index]
+        q_text = q.get("question", "")
+        q_header = q.get("header", "")
+        multi = q.get("multiSelect", False)
+        options = q.get("options", [])
+
+        progress_str = f" ({current_index + 1}/{total})" if total > 1 else ""
+        title = f"{q_header}{progress_str}" if q_header else f"问题{progress_str}"
+        desc = q_text
+        if multi:
+            desc += " (可多选)"
+        elements.append({"tag": "markdown", "content": f"**{_escape_md(title)}**\n{_escape_md(desc)}"})
+
+        # 当前勾选集（多选用）
+        cur_sel = set(selections.get(q_text, []))
+
+        for i, opt in enumerate(options):
+            opt_label = opt.get("label", "")
+            opt_desc = opt.get("description", "")
+            if multi:
+                checked = opt_label in cur_sel
+                prefix = "☑" if checked else "☐"
+                btn_type = "primary" if checked else "default"
+                display = f"{prefix} {i + 1}. {opt_label}"
+                if opt_desc:
+                    display += f" — {opt_desc}"
                 elements.append({
                     "tag": "column_set", "flex_mode": "none",
                     "columns": [{"tag": "column", "width": "weighted", "weight": 1, "horizontal_align": "left",
                         "elements": [{"tag": "button",
-                            "text": {"tag": "plain_text", "content": f"{i+1}. {opt.get('label', '')}"},
+                            "text": {"tag": "plain_text", "content": display},
                             "type": btn_type,
                             "behaviors": [{"type": "callback", "value": {
-                                "action": "hook_question",
+                                "action": "hook_question_toggle",
                                 "request_id": req_id,
-                                "question": q_text,
-                                "answer": opt.get("label", ""),
+                                "question_index": current_index,
+                                "option_label": opt_label,
                             }}],
                         }],
                     }],
                 })
+            else:
+                btn_type = "primary" if i == 0 else "default"
+                display = f"{i + 1}. {opt_label}"
+                if opt_desc:
+                    display += f" — {opt_desc}"
+                elements.append({
+                    "tag": "column_set", "flex_mode": "none",
+                    "columns": [{"tag": "column", "width": "weighted", "weight": 1, "horizontal_align": "left",
+                        "elements": [{"tag": "button",
+                            "text": {"tag": "plain_text", "content": display},
+                            "type": btn_type,
+                            "behaviors": [{"type": "callback", "value": {
+                                "action": "hook_question",
+                                "request_id": req_id,
+                                "question_index": current_index,
+                                "answer": opt_label,
+                            }}],
+                        }],
+                    }],
+                })
+
+        # 多选：确认按钮
+        if multi:
+            confirm_label = f"✅ 确认选择 ({len(cur_sel)})" if cur_sel else "✅ 确认选择"
+            elements.append({
+                "tag": "column_set", "flex_mode": "none",
+                "columns": [{"tag": "column", "width": "weighted", "weight": 1, "horizontal_align": "left",
+                    "elements": [{"tag": "button",
+                        "text": {"tag": "plain_text", "content": confirm_label},
+                        "type": "primary" if cur_sel else "default",
+                        "behaviors": [{"type": "callback", "value": {
+                            "action": "hook_question_confirm",
+                            "request_id": req_id,
+                            "question_index": current_index,
+                        }}],
+                    }],
+                }],
+            })
+
         return elements
 
     return []
@@ -759,6 +882,7 @@ def build_stream_card(
     status_only: bool = False,
     skip_tools: bool = False,
     hook_state: Optional[dict] = None,
+    hook_progress: Optional[dict] = None,
 ) -> Dict[str, Any]:
     """从共享内存 blocks 流构建飞书卡片
 
@@ -776,6 +900,7 @@ def build_stream_card(
         blocks, status_line, bottom_bar, is_frozen,
         option_block=option_block, disconnected=disconnected,
         cli_type=cli_type, hook_state=hook_state,
+        hook_progress=hook_progress,
     )
 
     # === 第一层：内容区 ===
@@ -894,7 +1019,11 @@ def build_stream_card(
                     status_elements.append({"tag": "hr"})
                 questions = pq.get("questions", [])
                 if questions:
-                    q_text = questions[0].get("question", "请选择")
+                    idx = 0
+                    if hook_progress and hook_progress.get("request_id") == pq.get("request_id"):
+                        idx = hook_progress.get("current_index", 0)
+                    idx = min(idx, len(questions) - 1)
+                    q_text = questions[idx].get("question", "请选择")
                     status_elements.append({"tag": "markdown", "content": f"🤔 {_escape_md(q_text)}"})
         if status_elements:
             elements.append({
@@ -912,7 +1041,7 @@ def build_stream_card(
     # === 第三层：交互按钮区（仅非冻结且非断开时）===
     if not is_frozen and not disconnected:
         # 优先使用 hook 模式按钮（无需箭头键导航，直接发消息响应）
-        hook_buttons = _build_hook_buttons(hook_state) if hook_state else []
+        hook_buttons = _build_hook_buttons(hook_state, hook_progress=hook_progress) if hook_state else []
         if hook_buttons:
             elements.extend(hook_buttons)
         else:
