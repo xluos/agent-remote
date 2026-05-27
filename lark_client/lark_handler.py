@@ -35,6 +35,32 @@ from .shared_memory_poller import SharedMemoryPoller, CardSlice
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.session import list_active_sessions, get_socket_path, get_chat_bindings_file, ensure_user_data_dir, USER_DATA_DIR
 
+# agents-remote-core 项目路径
+_CORE_DIR = Path(__file__).parent.parent.parent / "agents-remote-core"
+# 共享内存等运行时文件目录（core server 通过 --data-dir 写到这里）
+from utils.session import SOCKET_DIR as _SOCKET_DIR
+
+
+def _build_core_server_cmd(session_name: str, cli_type: str = "claude",
+                           bypass: bool = False) -> list:
+    """构建 agents-remote-core server 启动命令"""
+    cmd = [
+        "uv", "run", "--project", str(_CORE_DIR),
+        "agents-remote-core",
+        "--data-dir", str(_SOCKET_DIR),
+        "start",
+    ]
+    if cli_type != "claude":
+        cmd += ["--cli-type", cli_type]
+    cmd.append(session_name)
+    # CLI 参数放 session_name 之后
+    if bypass:
+        if cli_type == "codex":
+            cmd += ["--dangerously-bypass-approvals-and-sandbox"]
+        else:
+            cmd += ["--dangerously-skip-permissions", "--permission-mode=dontAsk"]
+    return cmd
+
 
 def _read_log_since(since: '_datetime', log_path: 'Path') -> str:
     """读取 startup.log 中 since 时间点之后的日志行"""
@@ -398,16 +424,8 @@ class LarkHandler:
             return
         self._starting_sessions.add(session_name)
 
-        script_dir = Path(__file__).parent.parent.absolute()
-        server_script = script_dir / "server" / "server.py"
-        cmd = ["uv", "run", "--project", str(script_dir), "python3", str(server_script), session_name]
-        if cli_type == "codex":
-            cmd += ["--cli-type", "codex"]
-        if self._poller.get_bypass_enabled():
-            if cli_type == "codex":
-                cmd += ["--", "--dangerously-bypass-approvals-and-sandbox"]
-            else:
-                cmd += ["--", "--dangerously-skip-permissions", "--permission-mode=dontAsk"]
+        cmd = _build_core_server_cmd(session_name, cli_type=cli_type,
+                                     bypass=self._poller.get_bypass_enabled())
 
         logger.info(f"启动会话: {session_name}, 工作目录: {work_dir}, cli_type: {cli_type}, 命令: {' '.join(cmd)}")
         _track_stats('lark', 'cmd_start', session_name=session_name, chat_id=chat_id)
@@ -482,16 +500,8 @@ class LarkHandler:
         self._starting_sessions.add(session_name)
 
         work_dir = str(work_path.absolute())
-        script_dir = Path(__file__).parent.parent.absolute()
-        server_script = script_dir / "server" / "server.py"
-        cmd = ["uv", "run", "--project", str(script_dir), "python3", str(server_script), session_name]
-        if cli_type == "codex":
-            cmd += ["--cli-type", "codex"]
-        if self._poller.get_bypass_enabled():
-            if cli_type == "codex":
-                cmd += ["--", "--dangerously-bypass-approvals-and-sandbox"]
-            else:
-                cmd += ["--", "--dangerously-skip-permissions", "--permission-mode=dontAsk"]
+        cmd = _build_core_server_cmd(session_name, cli_type=cli_type,
+                                     bypass=self._poller.get_bypass_enabled())
 
         try:
             env = _os.environ.copy()
