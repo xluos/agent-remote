@@ -76,6 +76,11 @@ def get_name_file(session_name: str) -> Path:
     return SOCKET_DIR / f"{_safe_filename(session_name)}.name"
 
 
+def get_hook_dir(session_name: str) -> Path:
+    """获取会话的 hook 目录路径（对应 core HookHarness 的 _hook_dir）"""
+    return SOCKET_DIR / f"{_safe_filename(session_name)}_hooks"
+
+
 def ensure_socket_dir():
     """确保 socket 目录存在"""
     SOCKET_DIR.mkdir(parents=True, exist_ok=True)

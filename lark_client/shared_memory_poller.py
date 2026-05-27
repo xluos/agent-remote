@@ -33,7 +33,7 @@ try:
 except Exception:
     def _track_stats(*args, **kwargs): pass
 
-from utils.session import ensure_user_data_dir, USER_DATA_DIR
+from utils.session import ensure_user_data_dir, USER_DATA_DIR, get_hook_dir
 
 # ── 常量 ──────────────────────────────────────────────────────────────────────
 INITIAL_WINDOW = 30    # 首次 attach 最多显示最近 30 个 blocks
@@ -108,6 +108,9 @@ class SharedMemoryPoller:
         self._trackers[chat_id] = tracker
         self._kick_events[chat_id] = asyncio.Event()
 
+        # 设置 remote_active 标记，让 core 的 permission.sh 拦截权限/问题交互
+        self._set_remote_active(session_name, True)
+
         task = asyncio.create_task(self._poll_loop(chat_id))
         task.add_done_callback(lambda t: self._on_task_done(t, chat_id))
         self._tasks[chat_id] = task
@@ -124,11 +127,15 @@ class SharedMemoryPoller:
 
         tracker = self._trackers.pop(chat_id, None)
         session_name = tracker.session_name if tracker else "N/A"
-        if tracker and tracker.reader:
-            try:
-                tracker.reader.close()
-            except Exception:
-                pass
+        if tracker:
+            # 检查是否还有其他 chat 连着同一个 session，没有才清除标记
+            if not self._has_other_tracker_for_session(session_name, exclude_chat=chat_id):
+                self._set_remote_active(session_name, False)
+            if tracker.reader:
+                try:
+                    tracker.reader.close()
+                except Exception:
+                    pass
         logger.info(f"轮询器停止: chat_id={chat_id[:8]}..., session={session_name}")
 
     def stop_and_get_active_slice(self, chat_id: str) -> Optional['CardSlice']:
@@ -144,6 +151,11 @@ class SharedMemoryPoller:
         if not tracker:
             return None
 
+        session_name = tracker.session_name
+        # 检查是否还有其他 chat 连着同一个 session
+        if not self._has_other_tracker_for_session(session_name, exclude_chat=chat_id):
+            self._set_remote_active(session_name, False)
+
         active = None
         if tracker.cards and not tracker.cards[-1].frozen:
             active = tracker.cards[-1]
@@ -154,9 +166,30 @@ class SharedMemoryPoller:
             except Exception:
                 pass
 
-        session_name = tracker.session_name if tracker else "N/A"
         logger.info(f"轮询器停止(含活跃切片): chat_id={chat_id[:8]}..., session={session_name}, active={'有' if active else '无'}")
         return active
+
+    def _set_remote_active(self, session_name: str, active: bool):
+        """设置/清除 hook_dir/remote_active 标记，控制 core permission.sh 是否拦截交互"""
+        flag = get_hook_dir(session_name) / "remote_active"
+        try:
+            if active:
+                flag.parent.mkdir(parents=True, exist_ok=True)
+                flag.touch()
+                logger.info(f"remote_active 已设置: session={session_name}")
+            else:
+                flag.unlink(missing_ok=True)
+                logger.info(f"remote_active 已清除: session={session_name}")
+        except OSError as e:
+            logger.warning(f"remote_active 操作失败: {e}")
+
+    def _has_other_tracker_for_session(self, session_name: str, exclude_chat: str) -> bool:
+        """检查是否还有其他 chat 连着同一个 session"""
+        return any(
+            t.session_name == session_name
+            for cid, t in self._trackers.items()
+            if cid != exclude_chat
+        )
 
     def _on_task_done(self, task: asyncio.Task, chat_id: str) -> None:
         """Task 完成回调：记录异常"""
