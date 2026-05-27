@@ -11,6 +11,7 @@ name = "agents-remote"
 version = "1.0.11"
 source = { editable = "." }
 dependencies = [
+    { name = "agents-remote-core" },
     { name = "lark-oapi" },
     { name = "mixpanel" },
     { name = "pyte" },
@@ -21,12 +22,28 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "agents-remote-core", editable = "../agents-remote-core" },
     { name = "lark-oapi", specifier = ">=1.4.24" },
     { name = "mixpanel", specifier = ">=5.0.0" },
     { name = "pyte", specifier = ">=0.8.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "python-socks", extras = ["asyncio"], specifier = ">=2.0.0" },
 ]
+
+[[package]]
+name = "agents-remote-core"
+version = "0.1.0"
+source = { editable = "../agents-remote-core" }
+dependencies = [
+    { name = "pyte" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pyte", specifier = ">=0.8.0" },
+    { name = "python-dotenv", marker = "extra == 'dotenv'", specifier = ">=1.0.0" },
+]
+provides-extras = ["dotenv"]
 
 [[package]]
 name = "annotated-types"

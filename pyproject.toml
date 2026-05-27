@@ -7,12 +7,16 @@ requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "xluos" }]
 dependencies = [
+    "agents-remote-core",
     "lark-oapi>=1.4.24",
     "python-dotenv>=1.0.0",
     "pyte>=0.8.0",
     "mixpanel>=5.0.0",
     "python-socks[asyncio]>=2.0.0",
 ]
+
+[tool.uv.sources]
+agents-remote-core = { path = "../agents-remote-core", editable = true }
 
 [project.scripts]
 agents-remote = "agent_remote:main"
@@ -23,7 +27,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["server", "client", "lark_client", "utils", "stats"]
+packages = ["client", "lark_client", "utils", "stats"]
 sources = ["."]
 
 [tool.hatch.build.targets.wheel.force-include]

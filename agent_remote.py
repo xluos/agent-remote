@@ -42,8 +42,6 @@ from utils.session import (
 
 # 获取脚本所在目录
 SCRIPT_DIR = Path(__file__).parent.absolute()
-# agents-remote-core 项目目录（PTY server runtime）
-CORE_DIR = SCRIPT_DIR.parent / "agents-remote-core"
 
 # 读取版本号（仅 import 时读取一次）
 try:
@@ -242,10 +240,10 @@ def cmd_start(args):
         if val:
             env_prefix += f"{key}='{val}' "
 
-    # 使用 agents-remote-core 的 server（带 hooks 能力），--data-dir 指向本项目的 SOCKET_DIR
+    # agents-remote-core 作为包依赖安装在本项目 venv 中，通过 uv run 调用其 CLI
     from utils.session import SOCKET_DIR
     server_cmd = (
-        f"{env_prefix}uv run --project '{CORE_DIR}' agents-remote-core"
+        f"{env_prefix}uv run --project '{SCRIPT_DIR}' agents-remote-core"
         f" --data-dir '{SOCKET_DIR}'"
         f" start{debug_flag}{debug_verbose_flag}{cli_type_flag}"
         f" '{session_name}' {claude_args_str}"

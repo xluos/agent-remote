@@ -35,17 +35,17 @@ from .shared_memory_poller import SharedMemoryPoller, CardSlice
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.session import list_active_sessions, get_socket_path, get_chat_bindings_file, ensure_user_data_dir, USER_DATA_DIR
 
-# agents-remote-core 项目路径
-_CORE_DIR = Path(__file__).parent.parent.parent / "agents-remote-core"
-# 共享内存等运行时文件目录（core server 通过 --data-dir 写到这里）
 from utils.session import SOCKET_DIR as _SOCKET_DIR
+
+# agents-remote-core 作为包依赖，通过 uv run --project <本项目> 调用
+_SCRIPT_DIR = Path(__file__).parent.parent.absolute()
 
 
 def _build_core_server_cmd(session_name: str, cli_type: str = "claude",
                            bypass: bool = False) -> list:
     """构建 agents-remote-core server 启动命令"""
     cmd = [
-        "uv", "run", "--project", str(_CORE_DIR),
+        "uv", "run", "--project", str(_SCRIPT_DIR),
         "agents-remote-core",
         "--data-dir", str(_SOCKET_DIR),
         "start",
