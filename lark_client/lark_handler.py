@@ -53,7 +53,11 @@ def _build_core_server_cmd(session_name: str, cli_type: str = "claude",
     if cli_type != "claude":
         cmd += ["--cli-type", cli_type]
     cmd.append(session_name)
-    # CLI 参数放 session_name 之后
+    # `--` 分隔：core 的 start 子命令 cli_args 用 nargs="*"，
+    # 不加 `--` 时透传的 --dangerously-skip-permissions / --permission-mode
+    # 会被 argparse 当成未知选项而报错退出（server 起不来 → socket 超时）
+    cmd.append("--")
+    # CLI 参数放 `--` 之后
     if bypass:
         if cli_type == "codex":
             cmd += ["--dangerously-bypass-approvals-and-sandbox"]

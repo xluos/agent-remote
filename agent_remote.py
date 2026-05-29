@@ -246,7 +246,10 @@ def cmd_start(args):
         f"{env_prefix}uv run --project '{SCRIPT_DIR}' agents-remote-core"
         f" --data-dir '{SOCKET_DIR}'"
         f" start{debug_flag}{debug_verbose_flag}{cli_type_flag}"
-        f" '{session_name}' {claude_args_str}"
+        # `--` 分隔：core 的 start 子命令 cli_args 用 nargs="*"，
+        # 不加 `--` 时透传的 --session-id / --dangerously-skip-permissions
+        # 会被 argparse 当成未知选项而报错退出（server 起不来 → socket 超时）
+        f" '{session_name}' -- {claude_args_str}"
     )
 
     # 配置启动日志（写文件 + stdout）
