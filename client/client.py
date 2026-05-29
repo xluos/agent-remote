@@ -72,10 +72,13 @@ def _is_detach_key(data: bytes) -> bool:
 class RemoteClient:
     """远程客户端"""
 
-    def __init__(self, session_name: str):
+    def __init__(self, session_name: str, quiet: bool = False):
         self.session_name = session_name
         self.socket_path = get_socket_path(session_name)
         self.client_id = generate_client_id()
+        # quiet=True 时连接成功不打印 ✅ 提示（由上层启动 UI 负责展示），
+        # 但连接失败的详细诊断仍照常打印
+        self.quiet = quiet
 
         # 连接
         self.reader: Optional[asyncio.StreamReader] = None
@@ -104,7 +107,8 @@ class RemoteClient:
             self.reader, self.writer = await asyncio.open_unix_connection(
                 path=str(self.socket_path)
             )
-            print(f"✅ 已连接到会话: {self.session_name}")
+            if not self.quiet:
+                print(f"✅ 已连接到会话: {self.session_name}")
             return True
         except ConnectionRefusedError as e:
             # 检查进程状态
@@ -305,9 +309,9 @@ class RemoteClient:
         print("\n已断开连接")
 
 
-def run_client(session_name: str):
+def run_client(session_name: str, quiet: bool = False):
     """运行客户端"""
-    client = RemoteClient(session_name)
+    client = RemoteClient(session_name, quiet=quiet)
 
     try:
         asyncio.run(client.run())

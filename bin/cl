@@ -28,5 +28,5 @@ fi
 [[ "$1" == "--" ]] && shift
 [[ -z "$NAME" ]] && NAME="${PWD}_$(date +%m%d_%H%M%S)"
 
-uv run --project "$SCRIPT_DIR" python3 "$SCRIPT_DIR/agent_remote.py" lark start
+uv run --project "$SCRIPT_DIR" python3 "$SCRIPT_DIR/agent_remote.py" lark start --quiet
 uv run --project "$SCRIPT_DIR" python3 "$SCRIPT_DIR/agent_remote.py" start "$NAME" -- --dangerously-skip-permissions --permission-mode=dontAsk "$@"

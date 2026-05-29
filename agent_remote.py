@@ -274,18 +274,66 @@ def cmd_start(args):
         print("错误: 无法创建 tmux 会话")
         return 1
 
-    # 等待 server 启动
     socket_path = get_socket_path(session_name)
-    for i in range(50):  # 最多等待 5 秒
-        if socket_path.exists():
-            break
-        time.sleep(0.1)
-        if (i + 1) % 10 == 0:
-            elapsed = (i + 1) // 10
-            print(f"等待 Server 启动... ({elapsed}s)")
-    else:
-        print("错误: Server 启动超时 (5s)")
-        # 过滤出本次启动后的日志行
+
+    # ---- 启动 UI：信息面板 + 两阶段 spinner，连上后整体擦除，不留痕迹 ----
+    from rich.console import Console, Group
+    from rich.live import Live
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.spinner import Spinner
+    from rich.text import Text
+
+    console = Console()
+
+    _cli_label = {"claude": "Claude", "codex": "Codex"}.get(cli_type, cli_type)
+    _skip_perm = any(
+        "skip-permissions" in a or "bypass-approvals" in a for a in claude_args
+    )
+    _mode_label = "跳过权限确认" if _skip_perm else "需确认权限"
+
+    from utils.session import get_tmux_session_name
+    _tmux_name = get_tmux_session_name(session_name)
+    _display_name = os.path.basename(session_name.rstrip("/")) or session_name
+
+    def _panel(status: Spinner) -> Panel:
+        info = Table.grid(padding=(0, 2))
+        info.add_column(justify="right", style="bright_black", no_wrap=True)
+        info.add_column(style="bold")
+        info.add_row("会话", _display_name)
+        info.add_row("引擎", f"{_cli_label}  ·  {_mode_label}")
+        info.add_row("tmux", _tmux_name)
+        return Panel(
+            Group(info, Text(""), status),
+            title="[bold cyan]⚡ Agent Remote[/]",
+            border_style="cyan",
+            padding=(1, 2),
+        )
+
+    timed_out = False
+    with Live(console=console, transient=True, refresh_per_second=12) as live:
+        spin = Spinner("dots", text=Text(" 启动 Server 中…", style="cyan"))
+        live.update(_panel(spin))
+        # 阶段 1：等待 server 创建 socket（最多 5 秒）
+        for i in range(50):
+            if socket_path.exists():
+                break
+            time.sleep(0.1)
+            if (i + 1) % 10 == 0:
+                spin.text = Text(f" 启动 Server 中…  {(i + 1) // 10}s", style="cyan")
+                live.update(_panel(spin))
+        else:
+            timed_out = True
+        # 阶段 2：正在连接（短暂过渡动画，让状态切换可感知）
+        if not timed_out:
+            spin = Spinner("dots", text=Text(" 正在连接会话…", style="green"))
+            live.update(_panel(spin))
+            time.sleep(0.4)
+    # 退出 Live(transient=True) 后，上面的启动面板已从终端擦除
+
+    if timed_out:
+        console.print("[bold red]✗ Server 启动超时 (5s)[/]")
+        # 过滤出本次启动后的日志行，帮助定位 server 崩溃原因
         if _log_path.exists():
             lines = []
             for line in _log_path.read_text(encoding="utf-8").splitlines():
@@ -297,20 +345,18 @@ def cmd_start(args):
                     if lines:  # 多行日志的续行，附到上一条
                         lines.append(line)
             if lines:
-                print(f"--- Server 日志 ({_log_path}) ---")
+                console.print(f"[bright_black]--- Server 日志 ({_log_path}) ---[/]")
                 print("\n".join(lines))
-                print("-------------------")
+                console.print("[bright_black]-------------------[/]")
         tmux_kill_session(session_name)
         return 1
 
-    print(f"会话已启动: rc-{session_name}")
-    print(f"正在连接...")
-
+    # 干净进入会话（quiet=True：连接成功不打印提示，避免污染 PTY 画面）
     # 直接在前台运行 client（不走 tmux），让终端能力协商序列
     # （如 kitty keyboard protocol）直接在 Claude CLI ↔ 用户终端之间流通，
     # 从而支持 Shift+Enter 等扩展键
     from client.client import run_client
-    run_client(session_name)
+    run_client(session_name, quiet=True)
 
     return 0
 
@@ -499,24 +545,28 @@ def _stop_watchdog():
 
 def cmd_lark_start(args):
     """启动飞书客户端（守护进程）"""
+    quiet = getattr(args, "quiet", False)
     if is_lark_running():
-        print("飞书客户端已在运行")
-        status = get_lark_status()
-        if status:
-            print(f"PID: {status['pid']}")
-            print(f"启动时间: {status['start_time']}")
-            print(f"运行时长: {status['uptime']}")
-        print("\n使用 'agents-remote lark stop' 停止")
-        return 1
+        if not quiet:
+            print("飞书客户端已在运行")
+            status = get_lark_status()
+            if status:
+                print(f"PID: {status['pid']}")
+                print(f"启动时间: {status['start_time']}")
+                print(f"运行时长: {status['uptime']}")
+            print("\n使用 'agents-remote lark stop' 停止")
+        # 已在运行：对 cla/cl 等 quiet 调用方属正常状态，不算失败
+        return 0 if quiet else 1
 
-    print("正在启动飞书客户端...")
+    if not quiet:
+        print("正在启动飞书客户端...")
 
     ensure_socket_dir()
     ensure_user_data_dir()
 
     # 启动前清理残留进程
     stale = kill_all_lark_processes()
-    if stale:
+    if stale and not quiet:
         print(f"  清理了 {len(stale)} 个残留进程: {stale}")
 
     # 启动守护进程（使用 -m 模块方式运行，确保相对导入正常工作）
@@ -541,21 +591,23 @@ def cmd_lark_start(args):
         time.sleep(1)
 
         if is_lark_running():
-            print(f"✓ 飞书客户端已启动")
-            print(f"  PID: {pid}")
-            print(f"  日志: {log_file}")
-            print(f"\n使用 'agents-remote lark status' 查看状态")
-            print(f"使用 'agents-remote lark stop' 停止")
+            if not quiet:
+                print(f"✓ 飞书客户端已启动")
+                print(f"  PID: {pid}")
+                print(f"  日志: {log_file}")
+                print(f"\n使用 'agents-remote lark status' 查看状态")
+                print(f"使用 'agents-remote lark stop' 停止")
             _start_watchdog()
             return 0
         else:
-            print("✗ 启动失败，请查看日志:")
-            print(f"  tail -f {log_file}")
+            # 失败始终提示，且走 stderr，避免被 quiet 调用方重定向吞掉
+            print("✗ 飞书客户端启动失败，请查看日志:", file=sys.stderr)
+            print(f"  tail -f {log_file}", file=sys.stderr)
             cleanup_lark()
             return 1
 
     except Exception as e:
-        print(f"✗ 启动失败: {e}")
+        print(f"✗ 飞书客户端启动失败: {e}", file=sys.stderr)
         cleanup_lark()
         return 1
 
@@ -1060,6 +1112,10 @@ def main():
 
     # lark start
     lark_start_parser = lark_subparsers.add_parser("start", help="启动飞书客户端")
+    lark_start_parser.add_argument(
+        "--quiet", action="store_true",
+        help="静默模式：已运行/启动成功时不输出，仅错误输出到 stderr（cla/cl 等快捷命令用）",
+    )
     lark_start_parser.set_defaults(func=cmd_lark_start)
 
     # lark stop
