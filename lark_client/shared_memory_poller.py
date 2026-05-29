@@ -300,7 +300,7 @@ class SharedMemoryPoller:
     ) -> None:
         """卡片操作主体：获取活跃卡片 → 创建/更新/拆分"""
         # 简单模式：走独立的"每轮一张卡片"渲染路径
-        if _simple_mode_enabled:
+        if _current_simple_mode():
             await self._do_card_update_simple(
                 tracker, blocks, status_line, bottom_bar, agent_panel,
                 option_block, cli_type, has_valid_snapshot=has_valid_snapshot,
@@ -855,14 +855,13 @@ class SharedMemoryPoller:
         logger.info(f"新会话 bypass 开关已{'开启' if enabled else '关闭'}")
 
     def get_simple_mode(self) -> bool:
-        """获取简单模式开关状态"""
-        return _simple_mode_enabled
+        """获取简单模式开关状态（热加载，文件为准）"""
+        return _current_simple_mode()
 
     def set_simple_mode(self, enabled: bool) -> None:
         """更新简单模式开关状态并持久化"""
-        global _simple_mode_enabled
-        _simple_mode_enabled = enabled
         _save_simple_mode(enabled)
+        _current_simple_mode()  # 立即刷新缓存（写盘后 mtime 变化触发重读）
         logger.info(f"简单模式开关已{'开启' if enabled else '关闭'}")
 
     def set_hook_progress(self, chat_id: str, progress: Optional[dict]) -> None:
@@ -978,11 +977,33 @@ def _save_simple_mode(enabled: bool) -> None:
         logger.warning(f"_save_simple_mode 失败: {e}")
 
 
+def _current_simple_mode() -> bool:
+    """读取简单模式开关，文件 mtime 变化时重新加载（热加载）。
+
+    daemon 长驻时直接编辑 simple_mode_enabled 文件即可即时生效，
+    无需 lark restart；带 mtime 缓存避免轮询热路径反复读盘。
+    """
+    global _simple_mode_cache, _simple_mode_mtime
+    try:
+        mtime = _SIMPLE_MODE_FILE.stat().st_mtime
+        if mtime != _simple_mode_mtime:
+            _simple_mode_mtime = mtime
+            _simple_mode_cache = _SIMPLE_MODE_FILE.read_text().strip() == "1"
+    except FileNotFoundError:
+        _simple_mode_cache = False
+        _simple_mode_mtime = 0.0
+    except Exception:
+        pass
+    return _simple_mode_cache
+
+
 # 模块级开关状态：启动时加载一次
 _notify_enabled: bool = _load_notify_enabled()
 _urgent_enabled: bool = _load_urgent_enabled()
 _bypass_enabled: bool = _load_bypass_enabled()
-_simple_mode_enabled: bool = _load_simple_mode()
+# 简单模式：缓存 + mtime，热加载（见 _current_simple_mode）
+_simple_mode_cache: bool = _load_simple_mode()
+_simple_mode_mtime: float = 0.0
 
 
 def _increment_ready_count() -> int:

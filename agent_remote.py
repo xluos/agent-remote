@@ -576,6 +576,7 @@ def cmd_lark_start(args):
         # 启动进程
         process = subprocess.Popen(
             ["uv", "run", "--project", str(SCRIPT_DIR), "python3", "-m", "lark_client.main"],
+            stdin=subprocess.DEVNULL,  # 不继承终端 stdin：终端关闭后 fd 0 会变坏，殃及 daemon 拉起的 core server
             stdout=open(log_file, 'a'),
             stderr=subprocess.STDOUT,
             start_new_session=True,  # 创建新的进程组
