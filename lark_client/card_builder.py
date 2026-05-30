@@ -411,13 +411,28 @@ def _build_menu_button_row(session_name: Optional[str] = None, disconnected: boo
         "columns": [_make_key_column(l, v) for l, v in shortcut_keys[4:]],
     }
 
+    # 直发命令：点击后把文本直接发送给 Claude（等价于在输入框打字+回车），单起一行
+    quick_cmds = [
+        ("✅ Yes", "Yes"),
+        ("继续", "继续"),
+        ("/compact", "/compact"),
+    ]
+    row3 = {
+        "tag": "column_set",
+        "flex_mode": "none",
+        "columns": [
+            _make_key_column(label, {"action": "quick_send", "text": text})
+            for label, text in quick_cmds
+        ],
+    }
+
     collapsible = {
         "tag": "collapsible_panel",
         "expanded": False,
         "header": {
             "title": {"tag": "plain_text", "content": "⌨️ 快捷键"},
         },
-        "elements": [row1, row2],
+        "elements": [row1, row2, row3],
     }
 
     form = {

@@ -354,6 +354,14 @@ def handle_card_action(event: P2CardActionTrigger) -> P2CardActionTriggerRespons
             asyncio.create_task(handler._handle_stream_reconnect(user_id, chat_id, session_name, message_id=message_id))
             return None
 
+        # 直发命令按钮：把固定文本直接发送给 Claude（等价输入框打字+回车）
+        if action_type == "quick_send":
+            text = action_value.get("text", "")
+            print(f"[Lark] quick_send: user={user_id[:8]}..., text={text!r}")
+            if text:
+                asyncio.create_task(handler.forward_to_claude(user_id, chat_id, text))
+            return None
+
         # 快捷键按钮（callback 模式）
         if action_type == "send_key":
             key_name = action_value.get("key", "")

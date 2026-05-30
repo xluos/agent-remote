@@ -171,7 +171,7 @@ uv run python3 tests/test_e2e.py
 | **内容区** | OutputBlock / UserInput / PlanBlock / SystemBlock | blocks 列表 |
 | **状态区** | status_line + bottom_bar + agent_panel + option_block 文本 | 状态型组件 |
 | **交互区** | hook 问题表单（select_static/checker，一次提交）/ 权限按钮 / OptionBlock 降级按钮 | hook_state 或 option_block |
-| **菜单** | ⚡菜单 + 🔌断开 + Enter↵ | 固定 |
+| **菜单** | ⚡菜单 + 🔌断开 + Enter↵ + ⌨️快捷键面板（方向键 / 直发命令 Yes·继续·/compact） | 固定 |
 
 ### AskUserQuestion 多问题交互（hook 模式）
 
