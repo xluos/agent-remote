@@ -169,9 +169,21 @@ def handle_card_action(event: P2CardActionTrigger) -> P2CardActionTriggerRespons
             response.toast = toast
             return response
 
-        # 检测 form 提交（输入框 Enter ↵ 按钮）
+        # 检测 form 提交
         form_value = getattr(action, 'form_value', None)
         if form_value is not None:
+            # Hook AskUserQuestion 表单：组件 name 以 hq_ 开头（select_static / checker）
+            # → 一次性解析所有问题答案，区别于菜单输入框的 command 提交
+            if any(str(k).startswith("hq_") for k in form_value):
+                print(f"[Lark] hook 问题表单提交: user={user_id[:8]}..., form={form_value}")
+                asyncio.create_task(handler.handle_hook_questions_submit(user_id, chat_id, form_value))
+                toast = CallBackToast()
+                toast.type = "success"
+                toast.content = "✅ 答案已提交"
+                response = P2CardActionTriggerResponse()
+                response.toast = toast
+                return response
+
             command_text = (form_value.get("command") or "").strip()
             print(f"[Lark] form 提交: user={user_id[:8]}..., command={command_text!r}")
             if command_text:

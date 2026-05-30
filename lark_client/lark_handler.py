@@ -1335,6 +1335,47 @@ class LarkHandler:
 
         self._poller.kick(chat_id)
 
+    async def handle_hook_questions_submit(self, user_id: str, chat_id: str, form_value: dict):
+        """Hook AskUserQuestion 表单一次性提交：从 form_value 解析所有问题答案后提交。
+
+        替代旧的逐题 callback（handle_hook_question / _toggle / _confirm）。form_value 里：
+        - 单选问题 hq_<qi>        → select_static 回传的选项 label
+        - 多选问题 hq_<qi>_<oi>   → checker 回传的 bool（True 表示该选项被勾选）
+        questions / request_id 从当前 hook_state 现取（权威），不依赖卡片渲染时的快照。
+        """
+        logger.info(f"hook_questions_submit: user={user_id[:8]}..., form_keys={list(form_value.keys())}")
+
+        tracker = self._poller._trackers.get(chat_id)
+        if not tracker or not tracker.hook_state:
+            await card_service.send_text(chat_id, "问题已过期或不存在")
+            return
+        pq = tracker.hook_state.get("pending_question", {})
+        questions = pq.get("questions", [])
+        request_id = pq.get("request_id", "")
+        if not questions:
+            return
+
+        def _checked(v) -> bool:
+            return v in (True, "true", "True", 1, "1")
+
+        answers: dict = {}
+        for qi, q in enumerate(questions):
+            q_text = q.get("question", "")
+            multi = q.get("multiSelect", False)
+            options = q.get("options", [])
+            if multi:
+                selected = [opt.get("label", "") for oi, opt in enumerate(options)
+                            if _checked(form_value.get(f"hq_{qi}_{oi}"))]
+                answers[q_text] = selected
+            else:
+                val = form_value.get(f"hq_{qi}")
+                if val:
+                    answers[q_text] = val
+
+        await self._send_hook_response(chat_id, request_id, questions, answers)
+        # core 收到响应后会清除 pending_question，poller 的问题冻结随之自动解除
+        self._poller.kick(chat_id)
+
     async def _send_hook_response(self, chat_id: str, request_id: str,
                                   questions: list, answers: dict):
         """通过 Unix socket 发送 QuestionResponseMessage 给 server（server 再写 response 文件）"""

@@ -761,109 +761,71 @@ def _build_hook_buttons(hook_state: dict, hook_progress: Optional[dict] = None) 
         if not questions:
             return []
 
+        # 全部问题一次性铺开在一个 form 表单里：单选用 select_static 下拉、多选用平铺
+        # checker 复选框（原生勾选态），底部一个 form_submit 按钮一次性提交。彻底取代
+        # 旧的"逐题 callback + 重渲染"状态机，消除其竞态（提交后点击无反应等）。
+        # 提交路由靠表单组件 name 的 hq_ 前缀识别（见 main.py），request_id 由 handler
+        # 从 hook_state 现取，故 submit 按钮无需携带自定义 value（与菜单 Enter 按钮一致）。
         total = len(questions)
-        current_index = 0
-        answers = {}
-        selections = {}
-        if hook_progress and hook_progress.get("request_id") == req_id:
-            current_index = hook_progress.get("current_index", 0)
-            answers = hook_progress.get("answers", {})
-            selections = hook_progress.get("selections", {})
+        form_elements: List[Dict[str, Any]] = []
+        for qi, q in enumerate(questions):
+            q_text = q.get("question", "")
+            q_header = q.get("header", "")
+            multi = q.get("multiSelect", False)
+            options = q.get("options", [])
 
-        # 已答题摘要
-        for i in range(min(current_index, total)):
-            q = questions[i]
-            header = q.get("header", "")
-            ans = answers.get(q.get("question", ""), "")
-            if isinstance(ans, list):
-                ans = ", ".join(ans)
-            label = f"{header}: {ans}" if header else ans
-            elements.append({"tag": "markdown", "content": f"\\✅ {_escape_md(label)}"})
-
-        if current_index >= total:
-            return elements
-
-        # 当前问题
-        q = questions[current_index]
-        q_text = q.get("question", "")
-        q_header = q.get("header", "")
-        multi = q.get("multiSelect", False)
-        options = q.get("options", [])
-
-        progress_str = f" ({current_index + 1}/{total})" if total > 1 else ""
-        title = f"{q_header}{progress_str}" if q_header else f"问题{progress_str}"
-        desc = q_text
-        if multi:
-            desc += " (可多选)"
-        elements.append({"tag": "markdown", "content": f"**{_escape_md(title)}**\n{_escape_md(desc)}"})
-
-        # 当前勾选集（多选用）
-        cur_sel = set(selections.get(q_text, []))
-
-        for i, opt in enumerate(options):
-            opt_label = opt.get("label", "")
-            opt_desc = opt.get("description", "")
-            if multi:
-                checked = opt_label in cur_sel
-                prefix = "☑" if checked else "☐"
-                btn_type = "primary" if checked else "default"
-                display = f"{prefix} {i + 1}. {opt_label}"
-                if opt_desc:
-                    display += f" — {opt_desc}"
-                elements.append({
-                    "tag": "column_set", "flex_mode": "none",
-                    "columns": [{"tag": "column", "width": "weighted", "weight": 1, "horizontal_align": "left",
-                        "elements": [{"tag": "button",
-                            "text": {"tag": "plain_text", "content": display},
-                            "type": btn_type,
-                            "behaviors": [{"type": "callback", "value": {
-                                "action": "hook_question_toggle",
-                                "request_id": req_id,
-                                "question_index": current_index,
-                                "option_label": opt_label,
-                            }}],
-                        }],
-                    }],
-                })
-            else:
-                btn_type = "primary" if i == 0 else "default"
-                display = f"{i + 1}. {opt_label}"
-                if opt_desc:
-                    display += f" — {opt_desc}"
-                elements.append({
-                    "tag": "column_set", "flex_mode": "none",
-                    "columns": [{"tag": "column", "width": "weighted", "weight": 1, "horizontal_align": "left",
-                        "elements": [{"tag": "button",
-                            "text": {"tag": "plain_text", "content": display},
-                            "type": btn_type,
-                            "behaviors": [{"type": "callback", "value": {
-                                "action": "hook_question",
-                                "request_id": req_id,
-                                "question_index": current_index,
-                                "answer": opt_label,
-                            }}],
-                        }],
-                    }],
-                })
-
-        # 多选：确认按钮
-        if multi:
-            confirm_label = f"✅ 确认选择 ({len(cur_sel)})" if cur_sel else "✅ 确认选择"
-            elements.append({
-                "tag": "column_set", "flex_mode": "none",
-                "columns": [{"tag": "column", "width": "weighted", "weight": 1, "horizontal_align": "left",
-                    "elements": [{"tag": "button",
-                        "text": {"tag": "plain_text", "content": confirm_label},
-                        "type": "primary" if cur_sel else "default",
-                        "behaviors": [{"type": "callback", "value": {
-                            "action": "hook_question_confirm",
-                            "request_id": req_id,
-                            "question_index": current_index,
-                        }}],
-                    }],
-                }],
+            title = q_header or "问题"
+            if total > 1:
+                title = f"{title} ({qi + 1}/{total})"
+            desc = q_text + ("  (可多选)" if multi else "")
+            form_elements.append({
+                "tag": "markdown",
+                "content": f"**{_escape_md(title)}**\n{_escape_md(desc)}",
             })
 
+            if multi:
+                # 多选：每个选项一个平铺 checker，回传 bool（name=hq_<题>_<项>）
+                for oi, opt in enumerate(options):
+                    label = opt.get("label", "")
+                    opt_desc = opt.get("description", "")
+                    content = f"{label} — {opt_desc}" if opt_desc else label
+                    form_elements.append({
+                        "tag": "checker",
+                        "name": f"hq_{qi}_{oi}",
+                        "checked": False,
+                        "text": {"tag": "plain_text", "content": content},
+                    })
+            else:
+                # 单选：下拉 select_static，value=label（与 core 期望的 selectedOption 一致）
+                select_options = []
+                for opt in options:
+                    label = opt.get("label", "")
+                    opt_desc = opt.get("description", "")
+                    text = f"{label} — {opt_desc}" if opt_desc else label
+                    select_options.append({
+                        "text": {"tag": "plain_text", "content": text},
+                        "value": label,
+                    })
+                form_elements.append({
+                    "tag": "select_static",
+                    "name": f"hq_{qi}",
+                    "placeholder": {"tag": "plain_text", "content": "请选择…"},
+                    "options": select_options,
+                })
+
+        form_elements.append({
+            "tag": "button",
+            "name": "hook_submit",
+            "text": {"tag": "plain_text", "content": "✅ 提交全部"},
+            "type": "primary",
+            "action_type": "form_submit",
+        })
+
+        elements.append({
+            "tag": "form",
+            "name": "hook_q_form",
+            "elements": form_elements,
+        })
         return elements
 
     return []
@@ -1106,9 +1068,17 @@ def _build_session_list_elements(sessions: List[Dict], current_session: Optional
             current_label = "（当前）" if is_current else ""
             short_name = _get_display_name(name, cwd)
 
-            # 构建4行内容：名字、cli类型、启动时间、目录
+            # 会话来源 tag：tmux=True 是终端 cla 启动（飞书只是连进来，关闭会同时断开
+            # 终端那侧）；tmux=False 是飞书启动的裸进程（start_new_session），可放心直接关。
+            is_terminal = s.get("tmux", False)
+            if is_terminal:
+                source_tag = "<font color=\"orange\">📟 终端会话 · 关闭会断终端</font>"
+            else:
+                source_tag = "<font color=\"blue\">💬 飞书会话 · 可直接关</font>"
+
+            # 构建内容行：名字、cli类型 + 来源、启动时间、目录
             lines = [f"{status_icon} **{short_name}**{current_label}"]
-            lines.append(f"<font color=\"{cli_color}\">{cli_label}</font>")
+            lines.append(f"<font color=\"{cli_color}\">{cli_label}</font>　{source_tag}")
 
             if start_time:
                 lines.append(f"启动：{start_time}")
@@ -1165,13 +1135,20 @@ def _build_session_list_elements(sessions: List[Dict], current_session: Optional
                         "action": "list_disband_group", "session": name
                     }}]
                 })
+            if is_terminal:
+                kill_confirm_text = (
+                    f"「{name}」是终端启动的会话，关闭会同时断开终端那侧的 claude/codex。"
+                    f"确定要关闭吗？此操作不可撤销。"
+                )
+            else:
+                kill_confirm_text = f"确定要关闭飞书会话「{name}」吗？此操作不可撤销。"
             right_buttons.append({
                 "tag": "button",
                 "text": {"tag": "plain_text", "content": "🗑️ 关闭"},
                 "type": "danger",
                 "confirm": {
                     "title": {"tag": "plain_text", "content": "确认关闭会话"},
-                    "text": {"tag": "plain_text", "content": f"确定要关闭「{name}」吗？此操作不可撤销。"}
+                    "text": {"tag": "plain_text", "content": kill_confirm_text}
                 },
                 "behaviors": [{"type": "callback", "value": {
                     "action": "list_kill", "session": name
