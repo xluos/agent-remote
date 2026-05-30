@@ -26,6 +26,7 @@ from utils.protocol import (
     encode_message, decode_message
 )
 from utils.session import get_socket_path, generate_client_id, get_terminal_size
+from utils.shared_state_reader import SharedStateReader
 
 try:
     from stats import track as _track_stats
@@ -90,6 +91,13 @@ class RemoteClient:
 
         # 终端设置
         self.old_settings = None
+
+        # 终端标题栏：读 .mq 共享内存的 hook_state，把"等权限/等问题/运行中/空闲"
+        # 写进窗口标题。重点是区分"真的在跑工具" vs "卡住等飞书回复"，破解
+        # 用户把"被 hook 拦截"误判成"工具调用卡死"的盲区。
+        self._state_reader = SharedStateReader(session_name)
+        self._base_title = os.path.basename(session_name.rstrip("/")) or session_name
+        self._last_title: Optional[str] = None
 
     async def connect(self) -> bool:
         """连接到服务器"""
@@ -165,10 +173,11 @@ class RemoteClient:
         await self._send_resize(rows, cols)
 
         try:
-            # 并行运行输入和输出处理
+            # 并行运行输入、输出处理与标题栏轮询
             await asyncio.gather(
                 self._read_server(),
                 self._read_stdin(),
+                self._update_title_loop(),
                 return_exceptions=True
             )
         finally:
@@ -294,10 +303,59 @@ class RemoteClient:
             except Exception:
                 pass
 
+    async def _update_title_loop(self):
+        """周期读共享内存，把会话状态写进终端标题栏。
+
+        OSC 序列只改窗口标题、不占屏幕行，因此与 claude 的全屏 TUI 渲染零冲突
+        （区别于"底部状态条"会和 claude 抢屏幕）。读 .mq 是同步文件 I/O，放到
+        线程池里执行，避免阻塞 event loop。
+        """
+        loop = asyncio.get_event_loop()
+        while self.running:
+            try:
+                snapshot = await loop.run_in_executor(None, self._state_reader.read)
+                title = self._compute_title(snapshot)
+                if title != self._last_title:
+                    self._last_title = title
+                    self._write_title(title)
+            except Exception:
+                pass
+            await asyncio.sleep(0.5)
+
+    def _compute_title(self, snapshot: dict) -> str:
+        """根据共享内存快照算出标题；重点区分"卡住等回复" vs "正在跑工具"。
+
+        仅在 hook 模式（hook_state 存在）下展示运行态——解析模式没有权威的
+        "等权限/等问题"信号，强行猜测反而误导，故只显示会话名。
+        """
+        name = self._base_title
+        hs = snapshot.get("hook_state")
+        if not hs:
+            return name
+        if hs.get("waiting_permission") or hs.get("pending_permission"):
+            return f"⏳ 等待权限确认 · {name}"
+        if hs.get("pending_question"):
+            return f"❓ 等待回答 · {name}"
+        if not hs.get("turn_complete", True):
+            tool = hs.get("active_tool")
+            return f"⚙ 运行中 {tool} · {name}" if tool else f"⚙ 运行中 · {name}"
+        return f"✓ {name}"
+
+    def _write_title(self, title: str):
+        """写 OSC 0 设置窗口标题（同步、单次原子写，不与 OUTPUT 写入交错）"""
+        try:
+            seq = b'\x1b]0;' + title.encode('utf-8', 'replace') + b'\x07'
+            sys.stdout.buffer.write(seq)
+            sys.stdout.buffer.flush()
+        except Exception:
+            pass
+
     def _cleanup(self):
         """清理"""
         self.running = False
         _track_stats('terminal', 'disconnect', session_name=self.session_name)
+        # detach 时把标题恢复成干净的会话名，去掉状态标记
+        self._write_title(self._base_title)
         self._restore_terminal()
 
         if self.writer:
