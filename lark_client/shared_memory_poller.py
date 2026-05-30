@@ -77,6 +77,9 @@ class StreamTracker:
     hook_state: Optional[dict] = None
     # hook 多问题作答进度（由 lark_handler 维护）
     hook_progress: Optional[dict] = None
+    # 问题表单冻结：记录当前已渲染问题表单的 request_id。pending_question 期间表单
+    # （select_static/checker）的勾选是客户端本地态，重渲染会冲掉，故首帧渲染后冻结。
+    question_frozen_req: Optional[str] = None
     # hook 模式轮次跟踪：上一帧 turn_complete 值（用于检测 True→False 翻转 = 新轮次开始）
     prev_turn_complete: bool = True
 
@@ -299,6 +302,21 @@ class SharedMemoryPoller:
         has_valid_snapshot: bool = False,
     ) -> None:
         """卡片操作主体：获取活跃卡片 → 创建/更新/拆分"""
+        # pending_question 期间冻结卡片重建：问题表单（select_static/checker）的勾选是
+        # 客户端本地态，update_card 重渲染会把用户填的内容冲掉。首帧渲染表单后即冻结，
+        # 直到 core 清除 pending_question（已作答），再恢复正常更新。
+        cur_q_req = None
+        if tracker.hook_state:
+            _pq = tracker.hook_state.get("pending_question")
+            if _pq:
+                cur_q_req = _pq.get("request_id")
+        if cur_q_req:
+            if tracker.question_frozen_req == cur_q_req:
+                return  # 表单已渲染，冻结以保护用户正在填写的勾选
+            tracker.question_frozen_req = cur_q_req  # 本帧渲染表单，下一帧起冻结
+        else:
+            tracker.question_frozen_req = None
+
         # 简单模式：走独立的"每轮一张卡片"渲染路径
         if _current_simple_mode():
             await self._do_card_update_simple(
@@ -439,9 +457,10 @@ class SharedMemoryPoller:
     ) -> None:
         """简单模式卡片更新：每轮一张独立卡片，工具调用折叠
 
-        轮次切换检测分两种模式：
-        - hook 模式（hook_state 存在）：turn_complete True→False 翻转 = 新轮次
-        - 解析模式（hook_state 为 None）：新 UserInput block_id 出现 = 新轮次
+        轮次切换统一用 UserInput 基准：最后一条用户消息 = 一张卡。
+        （不再用 hook 的 turn_complete 翻转分轮——那会让 round_start 卡在很靠前，
+        如空闲 attach 时停在 0，把整段历史塞进一张卡，进而频繁触发元素超限、丢失
+        收尾帧。turn_complete 仅用于就绪判断 _update_ready_state，与分轮解耦。）
         """
         from .card_builder import build_stream_card
 
@@ -450,13 +469,10 @@ class SharedMemoryPoller:
 
         active = tracker.cards[-1] if tracker.cards else None
 
-        # 新一轮检测：区分 hook 模式和解析模式
-        if tracker.hook_state is not None:
-            is_new_round, round_start = self._detect_new_round_hook(tracker, blocks)
-        else:
-            is_new_round, round_start, user_bid = self._detect_new_round_parse(tracker, blocks)
-            if is_new_round:
-                tracker.simple_last_user_bid = user_bid
+        # 新一轮检测：统一 UserInput 基准（hook/解析两种模式一致）
+        is_new_round, round_start, user_bid = self._detect_new_round_parse(tracker, blocks)
+        if is_new_round:
+            tracker.simple_last_user_bid = user_bid
 
         if is_new_round:
             if active is not None and not active.frozen:
@@ -540,6 +556,17 @@ class SharedMemoryPoller:
         success = await self._card_service.update_card(
             card_id=active.card_id, sequence=active.sequence, card_content=card_dict,
         )
+        # 元素超限：冻结当前卡（_handle_element_limit 用 blocks[active.start_idx:] 重画，
+        # 保留完整内容 → 收尾帧不丢）+ 起新卡承接，并把本轮起点同步到新卡，
+        # 防止下一轮仍用超大 slice 再次超限。
+        if getattr(success, 'is_element_limit', False):
+            await self._handle_element_limit(
+                tracker, blocks, status_line, bottom_bar,
+                agent_panel, option_block, cli_type=cli_type,
+            )
+            if tracker.cards:
+                tracker.simple_round_start = tracker.cards[-1].start_idx
+            return
         if not success:
             logger.warning(f"[simple] update_card 失败 card_id={active.card_id}，降级新卡")
             _track_stats('card', 'fallback', session_name=tracker.session_name,
@@ -549,9 +576,11 @@ class SharedMemoryPoller:
                 await self._card_service.send_card(tracker.chat_id, new_card_id)
                 active.card_id = new_card_id
                 active.sequence = 0
-        else:
-            _track_stats('card', 'update', session_name=tracker.session_name,
-                         chat_id=tracker.chat_id)
+                tracker.content_hash = new_hash
+            # 创建也失败：不写 content_hash，下一轮重试，避免收尾帧永久丢失
+            return
+        _track_stats('card', 'update', session_name=tracker.session_name,
+                     chat_id=tracker.chat_id)
         tracker.content_hash = new_hash
 
     async def _create_new_card(
