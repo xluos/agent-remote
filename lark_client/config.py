@@ -34,7 +34,7 @@ ENABLE_USER_WHITELIST = os.getenv("ENABLE_USER_WHITELIST", "false").lower() == "
 BOT_NAME = os.getenv("BOT_NAME", "Claude")
 
 # 群聊名称前缀（格式：{GROUP_NAME_PREFIX}{dir}-{HH-MM}）
-GROUP_NAME_PREFIX = os.getenv("GROUP_NAME_PREFIX", "【Remote-Claude】")
+GROUP_NAME_PREFIX = os.getenv("GROUP_NAME_PREFIX", "【Agent Remote】")
 
 # 流式卡片配置
 MAX_CARD_BLOCKS = int(os.getenv("MAX_CARD_BLOCKS", "50"))

@@ -1076,9 +1076,10 @@ def _build_session_list_elements(sessions: List[Dict], current_session: Optional
             else:
                 source_tag = "<font color=\"blue\">💬 飞书会话 · 可直接关</font>"
 
-            # 构建内容行：名字、cli类型 + 来源、启动时间、目录
+            # 构建内容行：名字、cli类型、来源 tag（单起一行避免折行）、启动时间、目录
             lines = [f"{status_icon} **{short_name}**{current_label}"]
-            lines.append(f"<font color=\"{cli_color}\">{cli_label}</font>　{source_tag}")
+            lines.append(f"<font color=\"{cli_color}\">{cli_label}</font>")
+            lines.append(source_tag)
 
             if start_time:
                 lines.append(f"启动：{start_time}")
