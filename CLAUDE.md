@@ -54,6 +54,12 @@ lark 客户端自动适配：
 | **hook 模式** | `hook_state` ≠ None | `turn_complete` True→False 翻转 | `turn_complete` 权威信号 |
 | **解析模式** | `hook_state` = None | UserInput block_id 变化 | streaming + status_line 启发式 + 去抖 |
 
+> 注：上表的「轮次检测」用于普通流式卡片。**简洁模式（`_do_card_update_simple`）的分轮统一走 UserInput 基准**（最后一条用户消息 = 一张卡），不随 hook 的 `turn_complete` 翻转——否则 `round_start` 会卡在很靠前（空闲 attach 时停在 0），把整段历史塞进一张卡，频繁触发飞书元素超限并丢失收尾帧。`turn_complete` 在简洁模式仅用于就绪判断。
+
+### 简洁模式元素超限处理
+
+简洁路径与普通路径一致地处理 `update_card` 返回的元素超限哨兵（`is_element_limit`）：冻结当前卡（完整内容）+ 起新卡承接，并同步 `simple_round_start` 到新卡起点。渲染真失败时**不写 `content_hash`**，保证下一轮重试，避免收尾帧永久丢失。
+
 ## 职责分界
 
 | 层 | 职责 | 禁止事项 |
@@ -67,7 +73,7 @@ lark 客户端自动适配：
 ```
 agents-remote/
 ├── agent_remote.py            # CLI 入口（start/attach/list/kill/lark）
-├── client/client.py           # 终端客户端（raw mode 输入转发）
+├── client/client.py           # 终端客户端（raw mode 输入转发 + OSC 标题栏状态指示）
 │
 ├── lark_client/               # 飞书客户端
 │   ├── main.py                # WebSocket 入口，事件分发，action 路由
@@ -144,21 +150,45 @@ uv run python3 tests/test_e2e.py
 
 无 pytest 配置，测试文件均为独立脚本。
 
+## 终端客户端状态指示（标题栏）
+
+`client/client.py` 在 raw-mode 透传之外，额外起一个轮询任务读 `.mq` 共享内存的 `hook_state`，把会话状态写进终端窗口标题（OSC 0 序列）。用 OSC 标题而非屏幕底部状态条，是因为 `cla` 终端是纯透传、claude 占满全屏 TUI，OSC 只改标题、不占屏幕行，与 claude 渲染零冲突。
+
+| hook_state | 标题栏 |
+|------------|--------|
+| `waiting_permission` / `pending_permission` | `⏳ 等待权限确认 · <名>` |
+| `pending_question` | `❓ 等待回答 · <名>` |
+| `turn_complete=False` + `active_tool` | `⚙ 运行中 <工具> · <名>` |
+| `turn_complete=True` | `✓ <名>` |
+| `hook_state` 为 None（解析模式） | `<名>`（无权威信号，不猜状态） |
+
+目的：区分"真的在跑工具"和"卡住等飞书回复"，破解把 hook 拦截误判成工具卡死的盲区。
+
 ## 飞书卡片四层结构
 
 | 层 | 内容 | 来源 |
 |----|------|------|
 | **内容区** | OutputBlock / UserInput / PlanBlock / SystemBlock | blocks 列表 |
 | **状态区** | status_line + bottom_bar + agent_panel + option_block 文本 | 状态型组件 |
-| **交互区** | hook 按钮（多问题/多选）或 OptionBlock 降级按钮 | hook_state 或 option_block |
+| **交互区** | hook 问题表单（select_static/checker，一次提交）/ 权限按钮 / OptionBlock 降级按钮 | hook_state 或 option_block |
 | **菜单** | ⚡菜单 + 🔌断开 + Enter↵ | 固定 |
 
 ### AskUserQuestion 多问题交互（hook 模式）
 
-- 逐题显示，客户端本地收集答案（`_hook_progress`）
-- 全部答完后一次性通过 `send_question_response` 提交
-- 多选问题：toggle 按钮 + 确认按钮
+- **全部问题铺开在一个 `form` 表单里，一次性提交**（取代旧的"逐题 callback + 重渲染"状态机，消除其竞态）
+- 单选 → `select_static` 下拉（option `value` = 选项 label）；多选 → 平铺 `checker` 复选框（回传 bool）
+- 提交按钮 `action_type: form_submit`（无自定义 value）；`main.py` 按表单组件 name 的 `hq_` 前缀路由到 `handle_hook_questions_submit`，`request_id` 由 handler 从 `hook_state` 现取
+- 组件命名：单选 `hq_<题序>`，多选 `hq_<题序>_<项序>`
+- **pending_question 期间 poller 冻结卡片**（`StreamTracker.question_frozen_req`）：表单勾选是客户端本地态，重渲染会冲掉，故首帧渲染后冻结，直到 core 清除 pending_question
 - 响应格式：`[{question: idx, selectedOption/selectedOptions: ...}, ...]`
+- 旧的逐题 callback（`hook_question`/`hook_question_toggle`/`hook_question_confirm`）路由与 handler 仍保留作在途旧卡片的向后兼容，新卡片不再发出这些 action
+
+### 会话列表来源标识（菜单卡片）
+
+- 列表每个会话按 `list_active_sessions()` 的 `tmux` 字段标来源：
+  - `tmux=True` → 「📟 终端会话 · 关闭会断终端」（橙色，`cla` 启动、有 `rc-` tmux，飞书只是连进来）
+  - `tmux=False` → 「💬 飞书会话 · 可直接关」（蓝色，飞书 `start_new_session` 裸进程）
+- 关闭确认文案据此区分：终端会话额外警告"会同时断开终端那侧的 claude/codex"
 
 ## 开发须知
 
